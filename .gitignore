@@ -5,3 +5,4 @@
 *.bin
 build/*
 cppcheck-report.txt
+/.vscode
