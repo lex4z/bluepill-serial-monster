@@ -436,7 +436,7 @@ export STM32CUBE_PATH=~/stm32/stm32cube
 Define STM32 board name
 
 ```bash
-export STM_NAME=STM32F103xB #for example
+export STM_NAME = STM32F103xB #for example
 ```
 
 ## Building
