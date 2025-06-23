@@ -12,7 +12,7 @@ STM_SERIES = $(shell echo $(STM_NAME) | cut -c 1-7)
 LOWER_STM_SERIES = $(shell echo $(STM_SERIES) | tr A-Z a-z)
 LOWER_STM_NAME = $(shell echo $(STM_NAME) | tr A-Z a-z)
 
-STM_CUBE_SERIES = $(shell echo $(STM_SERIES) | cut -c 6-7)
+#STM_CUBE_SERIES = $(shell echo $(STM_SERIES) | cut -c 6-7)
 STM_CPU = cortex-m3=
 
 # Toolchain & Utils
@@ -25,7 +25,7 @@ STUTIL		= st-util
 CPPCHECK	= cppcheck
 
 # STM32Cube Path
-STM32CUBE	= ${STM32CUBE_PATH}/STM32Cube$(STM_CUBE_SERIES)
+STM32CUBE	= ${STM32CUBE_PATH} #/STM32Cube$(STM_CUBE_SERIES)
 STM32_STARTUP	= $(STM32CUBE)/Drivers/CMSIS/Device/ST/$(STM_SERIES)xx/Source/Templates/gcc/startup_$(LOWER_STM_NAME).s
 STM32_SYSINIT	= $(STM32CUBE)/Drivers/CMSIS/Device/ST/$(STM_SERIES)xx/Source/Templates/system_$(LOWER_STM_SERIES)xx.c
 STM32_LDSCRIPT	= $(STM32CUBE)/Drivers/CMSIS/Device/ST/$(STM_SERIES)xx/Source/Templates/gcc/linker/$(STM_NAME)_FLASH.ld
