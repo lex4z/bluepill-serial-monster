@@ -8,9 +8,13 @@
 #define USB_IO
 
 /* Buffer table */
+#if defined (STM32F1)
+#include <stm32f1xx.h>
+#elif defined(STM32F4)
+#include <stm32f4xx.h>
+#endif
 
 #include <stddef.h>
-#include <stm32f1xx.h>
 #include "circ_buf.h"
 #include "usb.h"
 #include "usb_std.h"

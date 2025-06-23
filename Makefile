@@ -5,6 +5,8 @@ SRCS	= main.c mcu/source/system_clock.c mcu/source/system_interrupts.c mcu/sourc
 INCLUDES += -Imcu/include
 INCLUDES += -Icdc/include
 INCLUDES += -Iusb/include
+STM_SERIES = STM32F1
+STM_NAME = STM32F103xB
 
 # Toolchain & Utils
 CROSS_COMPILE	?= arm-none-eabi-
@@ -17,19 +19,19 @@ CPPCHECK	= cppcheck
 
 # STM32Cube Path
 STM32CUBE	= ${STM32CUBE_PATH}
-STM32_STARTUP	= $(STM32CUBE)/Drivers/CMSIS/Device/ST/STM32F1xx/Source/Templates/gcc/startup_stm32f103xb.s
-STM32_SYSINIT	= $(STM32CUBE)/Drivers/CMSIS/Device/ST/STM32F1xx/Source/Templates/system_stm32f1xx.c
-STM32_LDSCRIPT	= $(STM32CUBE)/Drivers/CMSIS/Device/ST/STM32F1xx/Source/Templates/gcc/linker/STM32F103XB_FLASH.ld
+STM32_STARTUP	= $(STM32CUBE)/Drivers/CMSIS/Device/ST/STM32F1xx/Source/Templates/gcc/startup_$(STM_NAME).s
+STM32_SYSINIT	= $(STM32CUBE)/Drivers/CMSIS/Device/ST/STM32F1xx/Source/Templates/system_$(STM_SERIES)xx.c
+STM32_LDSCRIPT	= $(STM32CUBE)/Drivers/CMSIS/Device/ST/STM32F1xx/Source/Templates/gcc/linker/$(STM_NAME)_FLASH.ld
 
 STM32_INCLUDES	+= -I$(STM32CUBE)/Drivers/CMSIS/Core/Include
 STM32_INCLUDES	+= -I$(STM32CUBE)/Drivers/CMSIS/Core_A/Include
-STM32_INCLUDES	+= -I$(STM32CUBE)/Drivers/CMSIS/Device/ST/STM32F1xx/Include
+STM32_INCLUDES	+= -I$(STM32CUBE)/Drivers/CMSIS/Device/ST/$(STM_SERIES)xx/Include
 
-DEFINES		= -DSTM32F103xB -DHSE_VALUE=8000000U
-CPUFLAGS	= -mthumb -mcpu=cortex-m3
-WARNINGS	= -Wall
-OPTIMIZATION	= -O3
-DEBUG		= -ggdb
+DEFINES		 = -D$(STM_SERIES) -D$(STM_NAME) -DHSE_VALUE=8000000U
+CPUFLAGS	 = -mthumb -mcpu=cortex-m3
+WARNINGS	 = -Wall
+OPTIMIZATION = -O3
+DEBUG		 = -ggdb
 
 CFLAGS		= $(DEFINES) $(INCLUDES) $(STM32_INCLUDES) $(CPUFLAGS) $(WARNINGS) $(OPTIMIZATION) $(DEBUG) 
 LDFLAGS		= $(CPUFLAGS) -T$(STM32_LDSCRIPT) --specs=nosys.specs --specs=nano.specs
@@ -106,5 +108,3 @@ clean:
 .PHONY: distclean
 distclean: clean
 	rm -rf $(TARGET).elf $(TARGET).hex
-
-

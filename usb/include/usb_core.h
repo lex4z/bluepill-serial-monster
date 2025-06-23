@@ -7,9 +7,14 @@
 #ifndef USB_CORE_H
 #define USB_CORE_H
 
+#if defined (STM32F1)
+#include <stm32f1xx.h>
+#elif defined(STM32F4)
+#include <stm32f4xx.h>
+#endif
+
 #include <stdint.h>
 #include <stddef.h>
-#include <stm32f1xx.h>
 #include "usb_std.h"
 #include "usb_io.h"
 

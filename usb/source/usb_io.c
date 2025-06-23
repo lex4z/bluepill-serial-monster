@@ -3,8 +3,12 @@
  * 
  * Copyright (c) 2020 Kirill Kotyagin
  */
-
+#if defined (STM32F1)
 #include <stm32f1xx.h>
+#elif defined(STM32F4)
+#include <stm32f4xx.h>
+#endif
+
 #include "system_interrupts.h"
 #include "status_led.h"
 #include "usb_descriptors.h"

@@ -3,9 +3,13 @@
  * 
  * Copyright (c) 2020 Kirill Kotyagin
  */
+#if defined (STM32F1)
+#include <stm32f1xx.h>
+#elif defined(STM32F4)
+#include <stm32f4xx.h>
+#endif
 
 #include <string.h>
-#include <stm32f1xx.h>
 #include "system_interrupts.h"
 #include "circ_buf.h"
 #include "usb_std.h"

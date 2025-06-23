@@ -4,8 +4,13 @@
  * Copyright (c) 2020 Kirill Kotyagin
  */
 
-#include <string.h>
+#if defined (STM32F1)
 #include <stm32f1xx.h>
+#elif defined(STM32F4)
+#include <stm32f4xx.h>
+#endif
+
+#include <string.h>
 #include <limits.h>
 #include "device_config.h"
 

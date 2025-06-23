@@ -1,7 +1,11 @@
 #ifndef SYSTEM_INTERRUPTS_H
 #define SYSTEM_INTERRUPTS_H
 
+#if defined (STM32F1)
 #include <stm32f1xx.h>
+#elif defined(STM32F4)
+#include <stm32f4xx.h>
+#endif
 
 #define SYSTEM_INTERRUPTS_PRIORITY_GROUPING     0x02 /* 2 bits preemption, 2 bits sub-priority */
 

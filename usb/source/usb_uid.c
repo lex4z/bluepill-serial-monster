@@ -4,7 +4,12 @@
  * Copyright (c) 2020 Kirill Kotyagin
  */
 
+#if defined (STM32F1)
 #include <stm32f1xx.h>
+#elif defined(STM32F4)
+#include <stm32f4xx.h>
+#endif
+
 #include "usb_uid.h"
 
 usb_string_descriptor_t *usb_get_uid_string_descriptor() {
