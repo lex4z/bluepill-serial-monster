@@ -6,3 +6,4 @@
 build/*
 cppcheck-report.txt
 /.vscode
+.DS_Store
