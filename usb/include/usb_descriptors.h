@@ -14,7 +14,7 @@
 
 /* USB VID/PID */
 
-#define USB_ID_VENDOR   0x1209
+#define USB_ID_VENDOR   0x1209 //GENERIC
 #define USB_ID_PRODUCT  0xFFFE
 
 /* String Descriptors */
