@@ -489,6 +489,7 @@ void DMA1_Channel4_IRQHandler() {
     usb_cdc_port_tx_complete(0);
 }
 
+/*
 void DMA1_Channel7_IRQHandler() {
     (void)DMA1_Channel7_IRQHandler;
     uint32_t status = DMA1->ISR & ( DMA_ISR_TCIF7 );
@@ -502,6 +503,7 @@ void DMA1_Channel2_IRQHandler() {
     DMA1->IFCR = status;
     usb_cdc_port_tx_complete(2);
 }
+    */
 
 /* USART Interrupt Handlers */
 
@@ -527,6 +529,7 @@ void USART1_IRQHandler() {
     usb_cdc_usart_irq_handler(0, usb_cdc_port_usarts[0], usb_cdc_states[0].txa_bitband_clear);
 }
 
+/*
 void USART2_IRQHandler() {
     (void)USART2_IRQHandler;
     usb_cdc_usart_irq_handler(1, usb_cdc_port_usarts[1], usb_cdc_states[1].txa_bitband_clear);
@@ -536,6 +539,7 @@ void USART3_IRQHandler() {
     (void)USART3_IRQHandler;
     usb_cdc_usart_irq_handler(2, usb_cdc_port_usarts[2], usb_cdc_states[2].txa_bitband_clear);
 }
+    */
 
 /* Port Configuration & Control Lines Functions */
 

@@ -6,7 +6,7 @@ INCLUDES += -Imcu/include
 INCLUDES += -Icdc/include
 INCLUDES += -Iusb/include
 
-STM_NAME = STM32F103xB
+STM_NAME = STM32F102xB
 
 STM_SERIES = $(shell echo $(STM_NAME) | cut -c 1-7)
 LOWER_STM_SERIES = $(shell echo $(STM_SERIES) | tr A-Z a-z)

@@ -16,7 +16,7 @@ void gpio_pin_init(const gpio_pin_t *pin) {
         volatile uint32_t *crx = &pin->port->CRL + (pin->pin >> 3);
         uint8_t crx_offset = (pin->pin & 0x07) << 2;
         uint32_t modecfg = 0;
-        _gpio_enable_port(pin->port);
+        _gpio_enable_port(pin->port); 
         *crx &= ~((GPIO_CRL_CNF0 | GPIO_CRL_MODE0) << crx_offset);
         if (pin->dir == gpio_dir_input) {
             if (pin->pull == gpio_pull_floating) {
