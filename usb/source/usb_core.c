@@ -42,7 +42,8 @@ void usb_device_handle_suspend() {
     if (usb_device.state == usb_device_state_configured) {
         usb_cdc_suspend();
     }
-    USB->DADDR = USB_DADDR_EF;
+    USB_OTG_DEVICE->DCFG &= ~USB_OTG_DCFG_DAD;
+    //USB->DADDR = USB_DADDR_EF;
     usb_device.state = usb_device_state_reset;
 }
 
@@ -96,7 +97,7 @@ usb_status_t usb_control_endpoint_process_get_descriptor(usb_setup_t *setup,
 /* Standard Control Endpoint Requests Handling */
 
 static void usb_assign_device_address_cb() {
-    USB->DADDR = USB_DADDR_EF | usb_device.address;
+    USB_OTG_DEVICE->DCFG |= (usb_device.address << USB_OTG_DCFG_DAD_Pos);
     usb_device.state = usb_device_state_address_set;
 }
 
@@ -113,7 +114,7 @@ usb_status_t usb_control_endpoint_process_device_request(usb_setup_t *setup,
         ((uint8_t*)(*payload))[1] = 0;
         return usb_status_ack;
     case usb_device_request_set_address:
-        usb_device.address = setup->wValue & USB_DADDR_ADD_Msk;
+        usb_device.address = setup->wValue & USB_OTG_DCFG_DAD_Msk;
         *tx_callback_ptr = usb_assign_device_address_cb;
         return usb_status_ack;
     case usb_device_request_set_configuration: {

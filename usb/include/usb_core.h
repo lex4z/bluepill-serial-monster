@@ -11,6 +11,8 @@
 #include <stm32f1xx.h>
 #elif defined(STM32F4)
 #include <stm32f4xx.h>
+#elif defined(STM32F7)
+#include <stm32f7xx.h>
 #endif
 
 #include <stdint.h>

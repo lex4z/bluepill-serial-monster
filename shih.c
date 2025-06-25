@@ -1,9 +1,8 @@
 /*
-* MIT License 
-* 
-* Copyright (c) 2020 Kirill Kotyagin
-*/
-
+ * MIT License 
+ * 
+ * Copyright (c) 2020 Kirill Kotyagin
+ */
 #if defined (STM32F1)
 #include <stm32f1xx.h>
 #elif defined(STM32F4)
@@ -19,13 +18,12 @@
 #include "usb_panic.h"
 #include "usb_io.h"
 
-#if defined (STM32F103xB)
 static volatile usb_btable_entity_t *usb_btable = (usb_btable_entity_t*)USB_PMAADDR;
-#endif
+
 /* USB Initialization After Reset */
 
 void usb_io_reset() {
-    #if defined (STM32F103xB)
+    
     uint16_t offset = USB_BTABLE_SIZE;
     for (uint8_t ep_num=0; ep_num<USB_NUM_ENDPOINTS; ep_num++) {
         ep_reg_t ep_type = 0;
@@ -55,99 +53,22 @@ void usb_io_reset() {
             ep_type = USB_EP_INTERRUPT;
             break;
         }
-        *ep_reg = USB_EP_RX_VALID | USB_EP_TX_NAK | ep_type | ep_num;
-    }
-    USB->CNTR = USB_CNTR_CTRM | USB_CNTR_RESETM | USB_CNTR_SUSPM | USB_CNTR_WKUPM | USB_CNTR_SOFM;
-    USB->DADDR = USB_DADDR_EF;
-
-
-    #elif defined(STM32F769xx)
-    USB_OTG_FS->GINTSTS &= ~0xFFFFFFFF;
-
-    
-    // Очистить FIFO (RX и TX)
-    USB_OTG_FS->GRSTCTL |= USB_OTG_GRSTCTL_RXFFLSH;
-    while (USB_OTG_FS->GRSTCTL & USB_OTG_GRSTCTL_RXFFLSH);
-    USB_OTG_FS->GRSTCTL |= USB_OTG_GRSTCTL_TXFFLSH;
-    while (USB_OTG_FS->GRSTCTL & USB_OTG_GRSTCTL_TXFFLSH);
-
-    for (uint8_t ep_num=0; ep_num<USB_NUM_ENDPOINTS; ep_num++) {
-        ep_reg_t ep_type = 0;
-
-        USB_EP_OUT(ep_num)->DOEPCTL = USB_OTG_DOEPCTL_USBAEP | USB_OTG_DOEPCTL_EPTYP_1 | (64 & USB_OTG_DOEPCTL_MPSIZ);
-        USB_EP_IN(ep_num)->DIEPCTL = USB_OTG_DIEPCTL_USBAEP | USB_OTG_DIEPCTL_EPTYP_1 | (64 & USB_OTG_DIEPCTL_MPSIZ);
-        
-        switch(usb_endpoints[ep_num].type) {
-        case usb_endpoint_type_control:
-            ep_type = USB_EP_CONTROL;
-            break;
-        case usb_endpoint_type_isochronous:
-            ep_type = USB_EP_ISOCHRONOUS;
-            break;
-        case usb_endpoint_type_bulk:
-            ep_type = USB_EP_BULK;
-            break;
-        case usb_endpoint_type_interrupt:
-            ep_type = USB_EP_INTERRUPT;
-            break;
-        }
         
         *ep_reg = USB_EP_RX_VALID | USB_EP_TX_NAK | ep_type | ep_num;
     }
     
+    USB_OTG_FS->GINTMSK = USB_OTG_GINTMSK_USBRST | USB_OTG_GINTMSK_ENUMDNEM| USB_OTG_GINTMSK_USBSUSPM 
+    | USB_OTG_GINTSTS_IEPINT | USB_OTG_GINTSTS_OEPINT| USB_OTG_GINTMSK_WUIM | USB_OTG_GINTMSK_SOFM;
+
+   //USB->CNTR = USB_CNTR_CTRM | USB_CNTR_RESETM | USB_CNTR_SUSPM | USB_CNTR_WKUPM | USB_CNTR_SOFM;
     
-
-    // 3. Настроить endpoint 0 (Control, 64 байта)
-    USB_OTG_OUT_EP(0)->DOEPCTL = USB_OTG_DOEPCTL_USBAEP | (64 & USB_OTG_DOEPCTL_MPSIZ);
-    USB_OTG_IN_EP(0)->DIEPCTL = USB_OTG_DIEPCTL_USBAEP | (64 & USB_OTG_DIEPCTL_MPSIZ);
-
-    // 4. Настроить Bulk endpoint 1 (64 байта)
-    USB_EP_OUT(ep_num)->DOEPCTL = USB_OTG_DOEPCTL_USBAEP | USB_OTG_DOEPCTL_EPTYP_1 | (64 & USB_OTG_DOEPCTL_MPSIZ);
-    USB_EP_IN(ep_num)->DIEPCTL = USB_OTG_DIEPCTL_USBAEP | USB_OTG_DIEPCTL_EPTYP_1 | (64 & USB_OTG_DIEPCTL_MPSIZ);
-
-    // 5. Настроить Interrupt endpoint 2 (16 байт, пример)
-    USB_OTG_OUT_EP(2)->DOEPCTL = USB_OTG_DOEPCTL_USBAEP | USB_OTG_DOEPCTL_EPTYP_0 | (16 & USB_OTG_DOEPCTL_MPSIZ);
-    USB_OTG_IN_EP(2)->DIEPCTL = USB_OTG_DIEPCTL_USBAEP | USB_OTG_DIEPCTL_EPTYP_0 | (16 & USB_OTG_DIEPCTL_MPSIZ);
-
-    // 6. Включить нужные прерывания (RESET, ENUMDNE, RX, TX, SOF)
-    USB_OTG_FS->GINTMSK = USB_OTG_GINTMSK_USBRST | USB_OTG_GINTMSK_ENUMDNEM |
-                       USB_OTG_GINTMSK_RXFLVLM | USB_OTG_GINTMSK_IEPINT |
-                       USB_OTG_GINTMSK_OEPINT | USB_OTG_GINTMSK_SOFM;
-    // 7. Включить глобальное прерывание
-    USB_OTG->GAHBCFG |= USB_OTG_GAHBCFG_GINT;
-
-    // Сбросить адрес устройства (адрес = 0)
     USB_OTG_DEVICE->DCFG &= ~USB_OTG_DCFG_DAD;
-    #endif
-    
 }
+
 
 void usb_io_init() {
     /* Force USB re-enumeration */
-    #if defined (STM32F103xB)
     RCC->APB2ENR |= RCC_APB2ENR_IOPAEN;
-
-    GPIOA->CRH &= ~GPIO_CRH_CNF12;
-    GPIOA->CRH |= GPIO_CRH_MODE12_1;
-    for (int i=0; i<0xFFFF; i++) {
-        __NOP();
-    }
-
-    GPIOA->CRH &= ~GPIO_CRH_MODE12;
-    GPIOA->CRH |= GPIO_CRH_CNF12_0;
-
-    NVIC_DisableIRQ(USB_LP_CAN1_RX0_IRQn);
-
-    /* Initialize USB */
-    if (SystemCoreClock != RCC_MAX_FREQUENCY) {
-        RCC->CFGR |= RCC_CFGR_USBPRE;
-    }
-
-    RCC->APB1ENR |= RCC_APB1ENR_USBEN;
-    
-    #elif defined(STM32F105xC)
-    RCC->APB2ENR |= RCC_APB2ENR_IOPAEN;
-
     GPIOA->CRH &= ~GPIO_CRH_CNF12;
     GPIOA->CRH |= GPIO_CRH_MODE12_1;
     for (int i=0; i<0xFFFF; i++) {
@@ -155,72 +76,35 @@ void usb_io_init() {
     }
     GPIOA->CRH &= ~GPIO_CRH_MODE12;
     GPIOA->CRH |= GPIO_CRH_CNF12_0;
-
-    NVIC_DisableIRQ(USB_LP_CAN1_RX0_IRQn);
-
     /* Initialize USB */
+    NVIC_DisableIRQ(USB_LP_CAN1_RX0_IRQn);
     if (SystemCoreClock != RCC_MAX_FREQUENCY) {
         RCC->CFGR |= RCC_CFGR_OTGFSPRE;
     }
-
+    //RCC->APB1ENR |=  RCC_APB1ENR_USBEN;
     RCC->AHBENR |= RCC_AHBENR_OTGFSEN;
-    #elif defined(STM32F769xx)
-    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
 
-    GPIOA->MODER &= ~GPIO_MODER_MODER12;
-    GPIOA->MODER |= GPIO_MODER_MODER12_1; // Set PA12 to output mode
-    for (int i=0; i<0xFFFF; i++) {
-        __NOP();
-    }
-    GPIOA->MODER &= ~GPIO_MODER_MODER12; // Set PA12 to input mode
-    GPIOA->MODER |= GPIO_MODER_MODER12_0;
+    USB_OTG_FS->GRSTCTL = USB_OTG_GRSTCTL_CSRST;
+    while (USB_OTG_FS->GRSTCTL & USB_OTG_GRSTCTL_CSRST);
+    //USB->CNTR = USB_CNTR_FRES;
 
-    NVIC_DisableIRQ(OTG_FS_IRQn);
-
-    RCC->AHB2ENR |= RCC_AHB2ENR_OTGFSEN;
-    USB_OTG_FS->GRSTCTL |= USB_OTG_GRSTCTL_CSRST;
-    while (USB_OTG_FS->GRSTCTL & USB_OTG_GRSTCTL_CSRST){
-        __NOP();
-    }
-    USB_OTG_FS->GINTSTS = 0xFFFFFFFF;
-    USB_OTG_DEVICE->DCFG &= ~USB_OTG_DCFG_DAD;
     USB_OTG_FS->GUSBCFG |= USB_OTG_GUSBCFG_FDMOD;
-    while ((USB_OTG_FS->GUSBCFG & USB_OTG_GUSBCFG_FDMOD) == 0){
+    for (volatile int i = 0; i < 0x000A; i++) {
         __NOP();
     }
-    USB_OTG_FS->GINTMSK = USB_OTG_GINTMSK_USBRST | USB_OTG_GINTMSK_ENUMDNEM | USB_OTG_GINTMSK_RXFLVLM
-    | USB_OTG_GINTMSK_WUIM | USB_OTG_GINTMSK_SOFM | USB_OTG_GINTMSK_IEPINT | USB_OTG_GINTMSK_OEPINT;
-    USB_OTG_FS->GAHBCFG |= USB_OTG_GAHBCFG_GINT;
-    #endif
 
-    #if defined(OTG)
-    // USB OTG FS core soft reset
-    USB_OTG_FS->GRSTCTL |= USB_OTG_GRSTCTL_CSRST;
-    while (USB_OTG_FS->GRSTCTL & USB_OTG_GRSTCTL_CSRST); // Wait for reset to complete
+    //USB->BTABLE = 0;
+    //USB->DADDR = 0;
 
-    // Clear all pending OTG interrupts
-    USB_OTG_FS->GINTSTS = 0xFFFFFFFF;
-
-    // Set the device address to 0
     USB_OTG_DEVICE->DCFG &= ~USB_OTG_DCFG_DAD;
+    USB_OTG_FS->GOTGCTL |= USB_OTG_GOTGCTL_BSVLD;
 
-    // Enable device mode
-    USB_OTG_FS->GUSBCFG |= USB_OTG_GUSBCFG_FDMOD;
-    while ((USB_OTG_FS->GUSBCFG & USB_OTG_GUSBCFG_FDMOD) == 0);
-
-    // Enable USB OTG FS interrupts as needed (example: USB_OTG_GINTMSK_USBRST)
-    USB_OTG_FS->GINTMSK = USB_OTG_GINTMSK_USBRST | USB_OTG_GINTMSK_ENUMDNEM | USB_OTG_GINTMSK_RXFLVLM
-    | USB_OTG_GINTMSK_WUIM | USB_OTG_GINTMSK_SOFM | USB_OTG_GINTMSK_IEPINT | USB_OTG_GINTMSK_OEPINT;
     
-    // Enable USB OTG FS
-    USB_OTG_FS->GAHBCFG |= USB_OTG_GAHBCFG_GINT;
-    #else
-    USB->CNTR = USB_CNTR_FRES;
-    USB->BTABLE = 0;
-    USB->DADDR = 0;
-    USB->ISTR = 0;
-    USB->CNTR = USB_CNTR_RESETM;
-    #endif
+    USB_OTG_DEVICE->DCTL = 0; //?
+    
+    //NVIC_EnableIRQ(OTG_FS_IRQn);
+    //USB->ISTR = 0;
+    //USB->CNTR = USB_CNTR_RESETM;
 }
 
 /* Get Number of RX/TX Bytes Available  */
@@ -412,3 +296,76 @@ void usb_poll() {
     }
     usb_device_poll();
 }
+
+/*
+void OTG_FS_IRQHandler(void) {
+    uint32_t gintsts = USB_OTG_FS->GINTSTS;
+    uint32_t gintmsk = USB_OTG_FS->GINTMSK;
+    uint32_t pending = gintsts & gintmsk;
+
+    if (pending & USB_OTG_GINTSTS_USBRST) {
+        USB_CLEAR_INTERRUPT(USB_OTG_GINTSTS_USBRST);
+        usb_device_handle_reset();
+    }else if (pending & USB_OTG_GINTSTS_USBSUSP) {
+        USB_CLEAR_INTERRUPT(USB_OTG_GINTSTS_USBSUSP);
+        USB_OTG_DEVICE->DCTL |= USB_OTG_DCTL_SDIS; // Suspend mode
+        status_led_set(0);
+        usb_device_handle_suspend();
+    }else if (pending & USB_OTG_GINTSTS_WKUINT) {
+        USB_CLEAR_INTERRUPT(USB_OTG_GINTSTS_WKUINT);
+        USB_OTG_DEVICE->DCTL &= ~USB_OTG_DCTL_SDIS; // Resume
+        usb_device_handle_wakeup();
+    }else if (pending & USB_OTG_GINTSTS_SOF) {
+        USB_CLEAR_INTERRUPT(USB_OTG_GINTSTS_SOF);
+        if (usb_transfer_led_timer) {
+            status_led_set(--usb_transfer_led_timer);
+        }
+        usb_device_handle_frame();
+    }
+
+    // IN endpoint interrupt (TX complete)
+    if (pending & USB_OTG_GINTSTS_IEPINT) {
+        for (uint8_t ep = 0; ep < USB_NUM_ENDPOINTS; ep++) {
+            if (USB_OTG_DEVICE->DAINT & (1 << ep)) {
+                if (usb_endpoints[ep].event_handler) {
+                    usb_endpoints[ep].event_handler(ep, usb_endpoint_event_data_sent);
+                }
+                
+                USB_EP_IN(ep)->DIEPINT = USB_EP_IN(ep)->DIEPINT; // Clear flags
+            }
+        }
+    }
+
+    // OUT endpoint interrupt (RX complete or SETUP)
+    if (pending & USB_OTG_GINTSTS_OEPINT) {
+        for (uint8_t ep = 0; ep < USB_NUM_ENDPOINTS; ep++) {
+            if (USB_OTG_DEVICE->DAINT & (1 << (16 + ep))) {
+                uint32_t doepint = USB_EP_OUT(ep)->DOEPINT;
+                USB_EP_OUT(ep)->DOEPINT = doepint; // Clear
+
+                usb_endpoint_event_t evt = (doepint & USB_OTG_DOEPINT_STUP) ?
+                    usb_endpoint_event_setup : usb_endpoint_event_data_received;
+
+                if (usb_endpoints[ep].event_handler) {
+                    usb_endpoints[ep].event_handler(ep, evt);
+                }
+            }
+        }
+    }
+
+    // RX FIFO Not Empty — handle packet read
+    if (pending & USB_OTG_GINTSTS_RXFLVL) {
+        uint32_t grxstsp = USB_OTG_FS->GRXSTSP;
+        uint8_t ep = grxstsp & USB_OTG_GRXSTSP_EPNUM_Msk;
+        uint32_t bcnt = (grxstsp & USB_OTG_GRXSTSP_BCNT_Msk) >> USB_OTG_GRXSTSP_BCNT_Pos;
+        uint32_t pktsts = (grxstsp & USB_OTG_GRXSTSP_PKTSTS_Msk) >> USB_OTG_GRXSTSP_PKTSTS_Pos;
+        
+        if (pktsts == STS_DATA_UPDT || pktsts == STS_SETUP_UPDT) {
+            EndPoint[ep].rxCounter = bcnt;
+            read_Fifo(ep, bcnt);
+        }
+    }
+
+    usb_device_poll(); // Optional (for non-EP tasks)
+}
+*/

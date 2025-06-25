@@ -13,7 +13,7 @@ LOWER_STM_SERIES = $(shell echo $(STM_SERIES) | tr A-Z a-z)
 LOWER_STM_NAME = $(shell echo $(STM_NAME) | tr A-Z a-z)
 
 #STM_CUBE_SERIES = $(shell echo $(STM_SERIES) | cut -c 6-7)
-STM_CPU = cortex-m3=
+STM_CPU = cortex-m3
 
 # Toolchain & Utils
 CROSS_COMPILE	?= arm-none-eabi-

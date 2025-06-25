@@ -8,6 +8,8 @@
 #include <stm32f1xx.h>
 #elif defined(STM32F4)
 #include <stm32f4xx.h>
+#elif defined(STM32F7)
+#include <stm32f7xx.h>
 #endif
 
 #include "system_clock.h"
@@ -23,6 +25,7 @@ int main() {
     status_led_init();
     usb_init();
     while (1) {
+        //__NOP();
         usb_poll();
     }
 }

@@ -8,6 +8,8 @@
 #include <stm32f1xx.h>
 #elif defined(STM32F4)
 #include <stm32f4xx.h>
+#elif defined(STM32F7)
+#include <stm32f7xx.h>
 #endif
 
 #include <string.h>
@@ -113,7 +115,11 @@ const static device_config_t* device_config_get_stored() {
 }
 
 void device_config_init() {
-    RCC->AHBENR |= RCC_AHBENR_CRCEN;
+    #if defined(STM32F1)
+        RCC->AHBENR |= RCC_AHBENR_CRCEN;
+    #elif defined(STM32F4) || defined(STM32F7)
+        RCC->AHB1ENR |= RCC_AHB1ENR_CRCEN;
+    #endif
     const device_config_t *stored_config = device_config_get_stored();
     if (stored_config == 0) {
         stored_config = &default_device_config;
@@ -149,12 +155,24 @@ void device_config_save() {
     }
     while (FLASH->SR & FLASH_SR_BSY);
     FLASH->SR = FLASH->SR & FLASH_SR_EOP;
-    FLASH->CR = FLASH_CR_PER;
-    FLASH->AR = (uint32_t)config_page;
-    FLASH->CR |=  FLASH_CR_STRT;
-    while (!(FLASH->SR & FLASH_SR_EOP));
-    FLASH->SR = FLASH_SR_EOP;
-    FLASH->CR &= ~FLASH_CR_PER;
+    #if defined(STM32F1)
+        FLASH->CR = FLASH_CR_PER;
+        FLASH->AR = (uint32_t)config_page;
+        FLASH->CR |=  FLASH_CR_STRT;
+        while (!(FLASH->SR & FLASH_SR_EOP));
+        FLASH->SR = FLASH_SR_EOP;
+        FLASH->CR &= ~FLASH_CR_PER;
+    #elif defined(STM32F4) || defined(STM32F7)
+        // For STM32F4/F7, need to select sector and start erase
+        // Assuming config_page is aligned to sector boundary and sector size matches page size
+        uint32_t sector = ((uint32_t)config_page - FLASH_BASE) / DEVICE_CONFIG_PAGE_SIZE;
+        FLASH->CR &= ~FLASH_CR_SNB;
+        FLASH->CR |= (sector << FLASH_CR_SNB_Pos);
+        FLASH->CR |= FLASH_CR_SER;
+        FLASH->CR |= FLASH_CR_STRT;
+        while (FLASH->SR & FLASH_SR_BSY);
+        FLASH->CR &= ~FLASH_CR_SER;
+    #endif
     current_device_config.magic = DEVICE_CONFIG_MAGIC;
     current_device_config.crc = device_config_calc_crc(&current_device_config);
     FLASH->CR |= FLASH_CR_PG;

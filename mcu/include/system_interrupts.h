@@ -5,6 +5,8 @@
 #include <stm32f1xx.h>
 #elif defined(STM32F4)
 #include <stm32f4xx.h>
+#elif defined(STM32F7)
+#include <stm32f7xx.h>
 #endif
 
 #define SYSTEM_INTERRUPTS_PRIORITY_GROUPING     0x02 /* 2 bits preemption, 2 bits sub-priority */
