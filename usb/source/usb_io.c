@@ -76,7 +76,7 @@ void usb_io_reset() {
 
         USB_EP_OUT(ep_num)->DOEPCTL = USB_OTG_DOEPCTL_USBAEP | USB_OTG_DOEPCTL_EPTYP_1 | (64 & USB_OTG_DOEPCTL_MPSIZ);
         USB_EP_IN(ep_num)->DIEPCTL = USB_OTG_DIEPCTL_USBAEP | USB_OTG_DIEPCTL_EPTYP_1 | (64 & USB_OTG_DIEPCTL_MPSIZ);
-        
+
         switch(usb_endpoints[ep_num].type) {
         case usb_endpoint_type_control:
             ep_type = USB_EP_CONTROL;
@@ -226,15 +226,25 @@ void usb_io_init() {
 /* Get Number of RX/TX Bytes Available  */
 size_t usb_bytes_available(uint8_t ep_num) {
     return usb_btable[ep_num].rx_count & USB_COUNT0_RX_COUNT0_RX;
+    
 }
 
 size_t usb_space_available(uint8_t ep_num) {
-    ep_reg_t *ep_reg = ep_regs(ep_num);
-    size_t tx_space_available = 0;
-    if ((*ep_reg & USB_EPTX_STAT) == USB_EP_TX_NAK) {
-        tx_space_available = usb_endpoints[ep_num].tx_size;
-    }
-    return tx_space_available;
+    #if defined(OTG)
+        // For USB OTG, check if the IN endpoint is enabled and not busy
+        if ((USB_EP_IN(ep_num)->DIEPCTL & USB_OTG_DIEPCTL_USBAEP) &&
+            !(USB_EP_IN(ep_num)->DIEPTSIZ & USB_OTG_DIEPTSIZ_XFRSIZ)) {
+            return usb_endpoints[ep_num].tx_size;
+        }
+        return 0;
+    #else
+        ep_reg_t *ep_reg = ep_regs(ep_num);
+        size_t tx_space_available = 0;
+        if ((*ep_reg & USB_EPTX_STAT) == USB_EP_TX_NAK) {
+            tx_space_available = usb_endpoints[ep_num].tx_size;
+        }
+        return tx_space_available;
+    #endif
 }
 
 /* Endpoint Read/Write Operations */

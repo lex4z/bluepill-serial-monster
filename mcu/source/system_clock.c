@@ -30,7 +30,7 @@ void system_clock_init() {
         FLASH->ACR |= FLASH_ACR_LATENCY_1WS;
         // Adjust PLL configuration for STM32F4/F7 if needed
         // Example for STM32F4:
-        // RCC->PLLCFGR = (RCC->PLLCFGR & ~(RCC_PLLCFGR_PLLSRC | RCC_PLLCFGR_PLLM)) | (RCC_PLLCFGR_PLLSRC_HSE | (8 << RCC_PLLCFGR_PLLM_Pos));
+        RCC->PLLCFGR = (RCC->PLLCFGR & ~(RCC_PLLCFGR_PLLSRC | RCC_PLLCFGR_PLLM)) | (RCC_PLLCFGR_PLLSRC_HSE | (8 << RCC_PLLCFGR_PLLM_Pos));
     #endif
     
     RCC->CFGR |= RCC_CFGR_HPRE_DIV1;  //AHB en div 1

@@ -77,7 +77,23 @@ typedef enum {
     usb_cdc_port_direction_last
 } usb_cdc_port_direction_t;
 
+#if defined(STM32F7)
+static DMA_Stream_TypeDef* usb_cdc_get_port_dma_stream(int port, usb_cdc_port_direction_t port_dir) {
+    // Пример соответствия портов и направлений потокам DMA (уточните под свою схему!)
+    static DMA_Stream_TypeDef* const port_dma_streams[][usb_cdc_port_direction_last] = {
+        { DMA1_Stream5,  DMA1_Stream4 }, // порт 0: RX, TX
+        { DMA1_Stream6,  DMA1_Stream7 }, // порт 1: RX, TX
+        { DMA1_Stream3,  DMA1_Stream2 }, // порт 2: RX, TX
+    };
+    if (port < (sizeof(port_dma_streams) / sizeof(*port_dma_streams)) && 
+        port_dir < usb_cdc_port_direction_last) {
+        return port_dma_streams[port][port_dir];
+    }
+    return (DMA_Stream_TypeDef*)0; 
+}
+#else
 static DMA_Channel_TypeDef* usb_cdc_get_port_dma_channel(int port, usb_cdc_port_direction_t port_dir) {
+    
     static DMA_Channel_TypeDef* const port_dma_channels[][usb_cdc_port_direction_last] = {
         { DMA1_Channel5,  DMA1_Channel4 },
         { DMA1_Channel6,  DMA1_Channel7 },
@@ -89,6 +105,9 @@ static DMA_Channel_TypeDef* usb_cdc_get_port_dma_channel(int port, usb_cdc_port_
     }
     return (DMA_Channel_TypeDef*)0; 
 }
+#endif
+
+
 
 static uint8_t const usb_cdc_port_data_endpoints[] = {
     usb_endpoint_address_cdc_0_data,
@@ -351,6 +370,9 @@ static void usb_cdc_port_send_rx_usb(int port) {
 }
 
 static void usb_cdc_port_start_rx(int port) {
+    #if defined(STM32F7)
+   
+    #else
     DMA_Channel_TypeDef *dma_rx_ch = usb_cdc_get_port_dma_channel(port, usb_cdc_port_direction_rx);
     usb_cdc_state_t *cdc_state = &usb_cdc_states[port];
     circ_buf_t *rx_buf = &cdc_state->rx_buf;
@@ -358,14 +380,34 @@ static void usb_cdc_port_start_rx(int port) {
     dma_rx_ch->CMAR = (uint32_t)&rx_buf->data;
     dma_rx_ch->CNDTR = USB_CDC_BUF_SIZE;
     dma_rx_ch->CCR |= DMA_CCR_EN;
+    #endif
+    DMA_Stream_TypeDef *dma_rx_stream = usb_cdc_get_port_dma_stream(port, usb_cdc_port_direction_rx);
+    usb_cdc_state_t *cdc_state = &usb_cdc_states[port];
+    circ_buf_t *rx_buf = &cdc_state->rx_buf;
+
+    // Отключаем поток DMA
+    dma_rx_stream->CR &= ~DMA_SxCR_EN;
+    while (dma_rx_stream->CR & DMA_SxCR_EN); // Ждём полного отключения
+
+    // Настраиваем адрес памяти и размер передачи
+    dma_rx_stream->M0AR = (uint32_t)rx_buf->data;
+    dma_rx_stream->NDTR = USB_CDC_BUF_SIZE;
+
+    // Включаем поток DMA
+    dma_rx_stream->CR |= DMA_SxCR_EN;
 }
 
 static void usb_cdc_sync_rx_buffer(int port) {
     circ_buf_t *rx_buf = &usb_cdc_states[port].rx_buf;
     int rx_buf_tail = rx_buf->tail;
     size_t current_rx_bytes_available = circ_buf_count(rx_buf->head, rx_buf_tail, USB_CDC_BUF_SIZE);
-    DMA_Channel_TypeDef *dma_rx_ch = usb_cdc_get_port_dma_channel(port, usb_cdc_port_direction_rx);
-    size_t dma_head = USB_CDC_BUF_SIZE - dma_rx_ch->CNDTR;
+    #if defined(STM32F7)
+        DMA_Stream_TypeDef *dma_rx_stream = usb_cdc_get_port_dma_stream(port, usb_cdc_port_direction_rx);
+        size_t dma_head = USB_CDC_BUF_SIZE - dma_rx_stream->NDTR;
+    #else
+        DMA_Channel_TypeDef *dma_rx_ch = usb_cdc_get_port_dma_channel(port, usb_cdc_port_direction_rx);
+        size_t dma_head = USB_CDC_BUF_SIZE - dma_rx_ch->CNDTR;
+    #endif
     size_t dma_rx_bytes_available = circ_buf_count(dma_head, rx_buf_tail, USB_CDC_BUF_SIZE);
     usb_cdc_update_port_rts(port);
     if (dma_rx_bytes_available < current_rx_bytes_available) {
@@ -379,19 +421,33 @@ static void usb_cdc_sync_rx_buffer(int port) {
 void usb_cdc_config_mode_enter() {
     usb_cdc_state_t *cdc_state = &usb_cdc_states[USB_CDC_CONFIG_PORT];
     USART_TypeDef *usart = usb_cdc_get_port_usart(USB_CDC_CONFIG_PORT);
-    DMA_Channel_TypeDef *dma_tx_ch = usb_cdc_get_port_dma_channel(USB_CDC_CONFIG_PORT, usb_cdc_port_direction_tx);
-    cdc_state->rx_buf.tail = cdc_state->rx_buf.head = 0;
-    cdc_state->tx_buf.tail = cdc_state->tx_buf.head = 0;
-    usart->CR1 &= ~(USART_CR1_RE);
-    dma_tx_ch->CCR &= ~(DMA_CCR_EN);
+    #if defined(STM32F7)
+        DMA_Stream_TypeDef *dma_tx_stream = usb_cdc_get_port_dma_stream(USB_CDC_CONFIG_PORT, usb_cdc_port_direction_tx);
+    #else
+        DMA_Channel_TypeDef *dma_tx_ch = usb_cdc_get_port_dma_channel(USB_CDC_CONFIG_PORT, usb_cdc_port_direction_tx);
+    #endif
+        cdc_state->rx_buf.tail = cdc_state->rx_buf.head = 0;
+        cdc_state->tx_buf.tail = cdc_state->tx_buf.head = 0;
+        usart->CR1 &= ~(USART_CR1_RE);
+    #if defined(STM32F7)
+        dma_tx_stream->CR &= ~(DMA_SxCR_EN);
+    #else
+        dma_tx_ch->CCR &= ~(DMA_CCR_EN);
+    #endif
     cdc_shell_init();
     usb_cdc_config_mode = 1;
 }
 
 void usb_cdc_config_mode_leave() {
     usb_cdc_state_t *cdc_state = &usb_cdc_states[USB_CDC_CONFIG_PORT];
-    DMA_Channel_TypeDef *dma_rx_ch = usb_cdc_get_port_dma_channel(USB_CDC_CONFIG_PORT, usb_cdc_port_direction_rx);
-    size_t dma_head = USB_CDC_BUF_SIZE - dma_rx_ch->CNDTR;
+    size_t dma_head;
+    #if defined(STM32F7)
+        DMA_Stream_TypeDef *dma_rx_stream = usb_cdc_get_port_dma_stream(USB_CDC_CONFIG_PORT, usb_cdc_port_direction_rx);
+        dma_head = USB_CDC_BUF_SIZE - dma_rx_stream->NDTR;
+    #else
+        DMA_Channel_TypeDef *dma_rx_ch = usb_cdc_get_port_dma_channel(USB_CDC_CONFIG_PORT, usb_cdc_port_direction_rx);
+        dma_head = USB_CDC_BUF_SIZE - dma_rx_ch->CNDTR;
+    #endif
     USART_TypeDef *usart = usb_cdc_get_port_usart(USB_CDC_CONFIG_PORT);
     cdc_state->rx_buf.tail = cdc_state->rx_buf.head = dma_head;
     cdc_state->tx_buf.tail = cdc_state->tx_buf.head = 0;
@@ -442,32 +498,66 @@ void cdc_shell_write(const void *buf, size_t count) {
 /* USB USART TX Functions */
 
 static void usb_cdc_port_start_tx(int port) {
-    DMA_Channel_TypeDef *dma_tx_ch = usb_cdc_get_port_dma_channel(port, usb_cdc_port_direction_tx);
-    usb_cdc_state_t *cdc_state = &usb_cdc_states[port];
-    circ_buf_t *tx_buf = &cdc_state->tx_buf;
-    size_t tx_bytes_available = circ_buf_count_to_end(tx_buf->head, tx_buf->tail, USB_CDC_BUF_SIZE);
-    int dma_ch_busy = dma_tx_ch->CCR & DMA_CCR_EN;
-    if (!dma_ch_busy) {
-        if (tx_bytes_available) {
-            usb_cdc_set_port_txa(port, 1);
-            dma_tx_ch->CMAR = (uint32_t)&tx_buf->data[tx_buf->tail];
-            dma_tx_ch->CNDTR = tx_bytes_available;
-            dma_tx_ch->CCR |= DMA_CCR_EN;
-            cdc_state->last_dma_tx_size = tx_bytes_available;
-        } else {
-            USART_TypeDef *usart = usb_cdc_get_port_usart(port);
-            usart->SR &= ~(USART_SR_TC);
-            usart->CR1 |= USART_CR1_TCIE;
+    #if defined(STM32F7) || defined(STM32F4)
+        DMA_Stream_TypeDef *dma_tx_stream = usb_cdc_get_port_dma_stream(port, usb_cdc_port_direction_tx);
+        usb_cdc_state_t *cdc_state = &usb_cdc_states[port];
+        circ_buf_t *tx_buf = &cdc_state->tx_buf;
+        size_t tx_bytes_available = circ_buf_count_to_end(tx_buf->head, tx_buf->tail, USB_CDC_BUF_SIZE);
+        int dma_stream_busy = dma_tx_stream->CR & DMA_SxCR_EN;
+        if (!dma_stream_busy) {
+            if (tx_bytes_available) {
+                usb_cdc_set_port_txa(port, 1);
+                dma_tx_stream->M0AR = (uint32_t)&tx_buf->data[tx_buf->tail];
+                dma_tx_stream->NDTR = tx_bytes_available;
+                dma_tx_stream->CR |= DMA_SxCR_EN;
+                cdc_state->last_dma_tx_size = tx_bytes_available;
+            } else {
+                USART_TypeDef *usart = usb_cdc_get_port_usart(port);
+    #if defined(STM32F7)
+                usart->ISR &= ~(USART_ISR_TC);
+                usart->CR1 |= USART_CR1_TCIE;
+    #else
+                usart->SR &= ~(USART_SR_TC);
+                usart->CR1 |= USART_CR1_TCIE;
+    #endif
+            }
         }
-    }
+    #else // STM32F1
+        DMA_Channel_TypeDef *dma_tx_ch = usb_cdc_get_port_dma_channel(port, usb_cdc_port_direction_tx);
+        usb_cdc_state_t *cdc_state = &usb_cdc_states[port];
+        circ_buf_t *tx_buf = &cdc_state->tx_buf;
+        size_t tx_bytes_available = circ_buf_count_to_end(tx_buf->head, tx_buf->tail, USB_CDC_BUF_SIZE);
+        int dma_ch_busy = dma_tx_ch->CCR & DMA_CCR_EN;
+        if (!dma_ch_busy) {
+            if (tx_bytes_available) {
+                usb_cdc_set_port_txa(port, 1);
+                dma_tx_ch->CMAR = (uint32_t)&tx_buf->data[tx_buf->tail];
+                dma_tx_ch->CNDTR = tx_bytes_available;
+                dma_tx_ch->CCR |= DMA_CCR_EN;
+                cdc_state->last_dma_tx_size = tx_bytes_available;
+            } else {
+                USART_TypeDef *usart = usb_cdc_get_port_usart(port);
+                usart->SR &= ~(USART_SR_TC);
+                usart->CR1 |= USART_CR1_TCIE;
+            }
+        }
+    #endif
 }
 
 static void usb_cdc_port_tx_complete(int port) {
-    DMA_Channel_TypeDef *dma_tx_ch = usb_cdc_get_port_dma_channel(port, usb_cdc_port_direction_tx);
-    usb_cdc_state_t *cdc_state = &usb_cdc_states[port];
-    circ_buf_t *tx_buf = &cdc_state->tx_buf;
-    tx_buf->tail = (tx_buf->tail + cdc_state->last_dma_tx_size) & (USB_CDC_BUF_SIZE - 1);
-    dma_tx_ch->CCR &= ~(DMA_CCR_EN);
+    #if defined(STM32F7) || defined(STM32F4)
+        DMA_Stream_TypeDef *dma_tx_stream = usb_cdc_get_port_dma_stream(port, usb_cdc_port_direction_tx);
+        usb_cdc_state_t *cdc_state = &usb_cdc_states[port];
+        circ_buf_t *tx_buf = &cdc_state->tx_buf;
+        tx_buf->tail = (tx_buf->tail + cdc_state->last_dma_tx_size) & (USB_CDC_BUF_SIZE - 1);
+        dma_tx_stream->CR &= ~(DMA_SxCR_EN);
+    #else
+        DMA_Channel_TypeDef *dma_tx_ch = usb_cdc_get_port_dma_channel(port, usb_cdc_port_direction_tx);
+        usb_cdc_state_t *cdc_state = &usb_cdc_states[port];
+        circ_buf_t *tx_buf = &cdc_state->tx_buf;
+        tx_buf->tail = (tx_buf->tail + cdc_state->last_dma_tx_size) & (USB_CDC_BUF_SIZE - 1);
+        dma_tx_ch->CCR &= ~(DMA_CCR_EN);
+    #endif
     if (cdc_state->line_state_change_pending) {
         size_t tx_bytes_available = circ_buf_count(tx_buf->head, tx_buf->tail, USB_CDC_BUF_SIZE);
         if (tx_bytes_available == 0) {
