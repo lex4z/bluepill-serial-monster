@@ -574,44 +574,75 @@ static void usb_cdc_port_tx_complete(int port) {
 
 /* DMA Interrupt Handlers */
 
-void DMA1_Channel4_IRQHandler() {
-    (void)DMA1_Channel4_IRQHandler;
+void DMA1_Stream4_IRQnHandler() {
+    (void)DMA1_Stream4_IRQnHandler;
+    #if defined(STM32F7)
+    uint32_t status = DMA1->HISR & ( DMA_HISR_TCIF4 );
+    DMA1->HIFCR = status;
+    #else
     uint32_t status = DMA1->ISR & ( DMA_ISR_TCIF4 );
     DMA1->IFCR = status;
+    #endif
     usb_cdc_port_tx_complete(0);
 }
 
-void DMA1_Channel7_IRQHandler() {
-    (void)DMA1_Channel7_IRQHandler;
+void DMA1_Stream7_IRQnHandler() {
+    (void)DMA1_Stream7_IRQnHandler;
+    #if defined(STM32F7)
+    uint32_t status = DMA1->HISR & ( DMA_HISR_TCIF7 );
+    DMA1->HIFCR = status;
+    #else
     uint32_t status = DMA1->ISR & ( DMA_ISR_TCIF7 );
     DMA1->IFCR = status;
+    #endif
     usb_cdc_port_tx_complete(1);
 }
 
-void DMA1_Channel2_IRQHandler() {
-    (void)DMA1_Channel2_IRQHandler;
+void DMA1_Stream2_IRQnHandler() {
+    (void)DMA1_Stream2_IRQnHandler;
+    #if defined(STM32F7)
+    uint32_t status = DMA1->HISR & ( DMA_LISR_TCIF2 );
+    DMA1->LIFCR = status;
+    #else
     uint32_t status = DMA1->ISR & ( DMA_ISR_TCIF2 );
     DMA1->IFCR = status;
+    #endif
     usb_cdc_port_tx_complete(2);
 }
 
 /* USART Interrupt Handlers */
 
 __attribute__((always_inline)) inline static void usb_cdc_usart_irq_handler(int port, USART_TypeDef * usart,
-    volatile uint32_t *txa_bitband_clear) {
-    uint32_t wait_rxne = 0;
-    uint32_t status = usart->SR;
-    if (status & USART_SR_TC) {
-        *txa_bitband_clear = 1;
-        usart->CR1 &= ~(USART_CR1_TCIE);
-    }
-    /* Synchronization is not required, no one can interrupt us */
-    if (status & USART_SR_PE) {
-        wait_rxne = 1;
-        usb_cdc_states[port].serial_state |= USB_CDC_SERIAL_STATE_PARITY_ERROR;
-    }
-    while (wait_rxne && (usart->SR & USART_SR_RXNE));
-    (void)usart->DR;
+        volatile uint32_t *txa_bitband_clear) {
+        uint32_t wait_rxne = 0;
+    
+    #if defined(STM32F1)
+        uint32_t status = usart->SR;
+        if (status & USART_SR_TC) {
+            *txa_bitband_clear = 1;
+            usart->CR1 &= ~(USART_CR1_TCIE);
+        }
+        /* Synchronization is not required, no one can interrupt us */
+        if (status & USART_SR_PE) {
+            wait_rxne = 1;
+            usb_cdc_states[port].serial_state |= USB_CDC_SERIAL_STATE_PARITY_ERROR;
+        }
+        while (wait_rxne && (usart->SR & USART_SR_RXNE));
+        (void)usart->DR;
+    #elif defined(STM32F4) || defined(STM32F7)
+        uint32_t status = usart->ISR;
+        if (status & USART_ISR_TC) {
+            *txa_bitband_clear = 1;
+            usart->CR1 &= ~(USART_CR1_TCIE);
+        }
+        /* Synchronization is not required, no one can interrupt us */
+        if (status & USART_ISR_PE) {
+            wait_rxne = 1;
+            usb_cdc_states[port].serial_state |= USB_CDC_SERIAL_STATE_PARITY_ERROR;
+        }
+        while (wait_rxne && (usart->ISR & USART_ISR_RXNE));
+        (void)usart->RDR;
+    #endif
 }
 
 void USART1_IRQHandler() {
@@ -669,24 +700,41 @@ void usb_cdc_reconfigure() {
 void usb_cdc_reset() {
     const device_config_t *device_config = device_config_get();
     usb_cdc_enabled = 0;
-    NVIC_SetPriority(DMA1_Channel2_IRQn, SYSTEM_INTERRUTPS_PRIORITY_HIGH);
-    NVIC_EnableIRQ(DMA1_Channel2_IRQn);
-    NVIC_SetPriority(DMA1_Channel4_IRQn, SYSTEM_INTERRUTPS_PRIORITY_HIGH);
-    NVIC_EnableIRQ(DMA1_Channel4_IRQn);
-    NVIC_SetPriority(DMA1_Channel7_IRQn, SYSTEM_INTERRUTPS_PRIORITY_HIGH);
-    NVIC_EnableIRQ(DMA1_Channel7_IRQn);
+    #if defined(STM32F1)
+        NVIC_SetPriority(DMA1_Channel2_IRQn, SYSTEM_INTERRUTPS_PRIORITY_HIGH);
+        NVIC_EnableIRQ(DMA1_Channel2_IRQn);
+        NVIC_SetPriority(DMA1_Channel4_IRQn, SYSTEM_INTERRUTPS_PRIORITY_HIGH);
+        NVIC_EnableIRQ(DMA1_Channel4_IRQn);
+        NVIC_SetPriority(DMA1_Channel7_IRQn, SYSTEM_INTERRUTPS_PRIORITY_HIGH);
+        NVIC_EnableIRQ(DMA1_Channel7_IRQn);
+    #elif defined(STM32F4) || defined(STM32F7)
+        NVIC_SetPriority(DMA1_Stream2_IRQn, SYSTEM_INTERRUTPS_PRIORITY_HIGH);
+        NVIC_EnableIRQ(DMA1_Stream2_IRQn);
+        NVIC_SetPriority(DMA1_Stream4_IRQn, SYSTEM_INTERRUTPS_PRIORITY_HIGH);
+        NVIC_EnableIRQ(DMA1_Stream4_IRQn);
+        NVIC_SetPriority(DMA1_Stream7_IRQn, SYSTEM_INTERRUTPS_PRIORITY_HIGH);
+        NVIC_EnableIRQ(DMA1_Stream7_IRQn);
+    #endif
+    
     /* 
      * Disable JTAG interface (SWD is still enabled),
      * this frees PA15, PB3, PB4 (needed for DSR/RI inputs).
      */
-    RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
-    AFIO->MAPR |= AFIO_MAPR_SWJ_CFG_JTAGDISABLE;
+    
+    #if defined(STM32F1)
+        RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
+        AFIO->MAPR |= AFIO_MAPR_SWJ_CFG_JTAGDISABLE;
+    #endif
     /* Configuration Mode Pin */
     gpio_pin_init(&device_config->config_pin);
     /* USART & DMA Reset and Setup */
     RCC->APB2ENR |= RCC_APB2ENR_USART1EN;
     RCC->APB1ENR |= RCC_APB1ENR_USART2EN | RCC_APB1ENR_USART3EN;
-    RCC->AHBENR |= RCC_AHBENR_DMA1EN;
+    #if defined(STM32F1)
+        RCC->AHBENR |= RCC_AHBENR_DMA1EN;
+    #elif defined(STM32F4) || defined(STM32F7)
+        RCC->AHB1ENR |= RCC_AHB1ENR_DMA1EN;
+    #endif
     RCC->APB2RSTR |= RCC_APB2RSTR_USART1RST;
     RCC->APB1RSTR |= RCC_APB1RSTR_USART2RST;
     RCC->APB1RSTR |= RCC_APB1RSTR_USART3RST;
@@ -699,20 +747,29 @@ void usb_cdc_reset() {
         (void)usb_cdc_states[port]._tx_data;
         usb_cdc_configure_port(port);
         USART_TypeDef *usart = usb_cdc_get_port_usart(port);
-        DMA_Channel_TypeDef *dma_rx_ch = usb_cdc_get_port_dma_channel(port, usb_cdc_port_direction_rx);
-        DMA_Channel_TypeDef *dma_tx_ch = usb_cdc_get_port_dma_channel(port, usb_cdc_port_direction_tx);
+        DMA_Stream_TypeDef *dma_rx_ch = usb_cdc_get_port_dma_stream(port, usb_cdc_port_direction_rx);
+        DMA_Stream_TypeDef *dma_tx_ch = usb_cdc_get_port_dma_stream(port, usb_cdc_port_direction_tx);
         usart->CR1 |= USART_CR1_UE | USART_CR1_TE;
         usart->CR3 |= USART_CR3_DMAR | USART_CR3_DMAT | USART_CR3_EIE;
         if (port != 0) {
             usart->CR3 |= USART_CR3_CTSE;
         }
         usb_cdc_set_line_coding(port, &usb_cdc_default_line_coding, 0);
-        dma_rx_ch->CCR |= DMA_CCR_MINC | DMA_CCR_CIRC | DMA_CCR_PL_0;
-        dma_rx_ch->CPAR = (uint32_t)&usart->DR;
-        dma_rx_ch->CMAR = (uint32_t)usb_cdc_states[port].rx_buf.data;
-        dma_rx_ch->CNDTR = USB_CDC_BUF_SIZE;
-        dma_tx_ch->CCR |= DMA_CCR_MINC | DMA_CCR_DIR | DMA_CCR_TCIE;
-        dma_tx_ch->CPAR = (uint32_t)&usart->DR;
+        #if defined(STM32F1)
+            dma_rx_ch->CCR |= DMA_CCR_MINC | DMA_CCR_CIRC | DMA_CCR_PL_0;
+            dma_rx_ch->CPAR = (uint32_t)&usart->DR;
+            dma_rx_ch->CMAR = (uint32_t)usb_cdc_states[port].rx_buf.data;
+            dma_rx_ch->CNDTR = USB_CDC_BUF_SIZE;
+            dma_tx_ch->CCR |= DMA_CCR_MINC | DMA_CCR_DIR | DMA_CCR_TCIE;
+            dma_tx_ch->CPAR = (uint32_t)&usart->DR;
+        #elif defined(STM32F4) || defined(STM32F7)
+            dma_rx_ch->CR |= DMA_SxCR_MINC | DMA_SxCR_CIRC | DMA_SxCR_PL_0;
+            dma_rx_ch->PAR = (uint32_t)&usart->RDR;
+            dma_rx_ch->M0AR = (uint32_t)usb_cdc_states[port].rx_buf.data;
+            dma_rx_ch->NDTR = USB_CDC_BUF_SIZE;
+            dma_tx_ch->CR |= DMA_SxCR_MINC | DMA_SxCR_DIR_0 | DMA_SxCR_TCIE;
+            dma_tx_ch->PAR = (uint32_t)&usart->RDR;
+        #endif
     }
     NVIC_SetPriority(USART1_IRQn, SYSTEM_INTERRUTPS_PRIORITY_CRITICAL);
     NVIC_EnableIRQ(USART1_IRQn);
