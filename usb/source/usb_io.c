@@ -241,12 +241,11 @@ size_t usb_space_available(uint8_t ep_num) {
 
 /* Endpoint Read/Write Operations */
 
-/* USB OTG FS Endpoint Read/Write Operations (no HAL) */
-
 int usb_read(uint8_t ep_num, void *buf, size_t buf_size) {
     #if defined(OTG)
     if (ep_num >= USB_NUM_ENDPOINTS || buf == NULL) return -1;
 
+    //USB_OTG_BCNT(ep_num);
     size_t rx_len = EndPoint[ep_num].rxCounter;
     if (rx_len == 0 || rx_len > buf_size) return -1;
 
@@ -405,6 +404,23 @@ size_t usb_circ_buf_send(uint8_t ep_num, circ_buf_t *buf, size_t buf_size) {
 /* Endpoint Stall */
 
 void usb_endpoint_set_stall(uint8_t ep_num, usb_endpoint_direction_t ep_direction, uint8_t ep_stall) {
+    #if defined(OTG)
+    if (ep_direction == usb_endpoint_direction_in) {
+        if (ep_stall) {
+            USB_EP_IN(ep_num)->DIEPCTL |= USB_OTG_DIEPCTL_STALL;
+        } else {
+            USB_EP_IN(ep_num)->DIEPCTL &= ~USB_OTG_DIEPCTL_STALL;
+            USB_EP_IN(ep_num)->DIEPCTL |= USB_OTG_DIEPCTL_USBAEP;
+        }
+    } else {
+        if (ep_stall) {
+            USB_EP_OUT(ep_num)->DOEPCTL |= USB_OTG_DOEPCTL_STALL;
+        } else {
+            USB_EP_OUT(ep_num)->DOEPCTL &= ~USB_OTG_DOEPCTL_STALL;
+            USB_EP_OUT(ep_num)->DOEPCTL |= USB_OTG_DOEPCTL_USBAEP;
+        }
+    }
+    #else
     ep_reg_t *ep_reg = ep_regs(ep_num);
     if ((*ep_reg & USB_EP_T_FIELD) != USB_EP_ISOCHRONOUS) {
         if (ep_direction == usb_endpoint_direction_in) {
@@ -425,13 +441,22 @@ void usb_endpoint_set_stall(uint8_t ep_num, usb_endpoint_direction_t ep_directio
             }
         }
     }
+    #endif
 }
 
 int usb_endpoint_is_stalled(uint8_t ep_num, usb_endpoint_direction_t ep_direction) {
+    #if defined(OTG)
+    if (ep_direction == usb_endpoint_direction_in) {
+        return (USB_EP_IN(ep_num)->DIEPCTL & USB_OTG_DIEPCTL_STALL) != 0;
+    } else {
+        return (USB_EP_OUT(ep_num)->DOEPCTL & USB_OTG_DOEPCTL_STALL) != 0;
+    }
+    #else
     if (ep_direction == usb_endpoint_direction_in) {
         return (*ep_regs(ep_num) & USB_EPTX_STAT) == USB_EP_TX_STALL;
     }
     return (*ep_regs(ep_num) & USB_EPRX_STAT) == USB_EP_RX_STALL;
+    #endif
 }
 
 /* USB Polling */
@@ -441,6 +466,76 @@ static uint8_t usb_transfer_led_timer = 0;
 uint16_t istr;
 
 void usb_poll() {
+    #if defined(OTG)
+    uint32_t gintsts = USB_OTG_FS->GINTSTS;
+    uint32_t gintmsk = USB_OTG_FS->GINTMSK;
+    uint32_t pending = gintsts & gintmsk;
+
+    if (pending & USB_OTG_GINTSTS_USBRST) {
+        USB_CLEAR_INTERRUPT(USB_OTG_GINTSTS_USBRST);
+        usb_device_handle_reset();
+    }
+
+    if (pending & USB_OTG_GINTSTS_USBSUSP) {
+        USB_CLEAR_INTERRUPT(USB_OTG_GINTSTS_USBSUSP);
+        USB_OTG_DEVICE->DCTL |= USB_OTG_DCTL_SDIS;
+        status_led_set(0);
+        usb_device_handle_suspend();
+    }
+
+    if (pending & USB_OTG_GINTSTS_WKUINT) {
+        USB_CLEAR_INTERRUPT(USB_OTG_GINTSTS_WKUINT);
+        USB_OTG_DEVICE->DCTL &= ~USB_OTG_DCTL_SDIS;
+        usb_device_handle_wakeup();
+    }
+
+    if (pending & USB_OTG_GINTSTS_SOF) {
+        USB_CLEAR_INTERRUPT(USB_OTG_GINTSTS_SOF);
+        if (usb_transfer_led_timer) {
+            status_led_set(--usb_transfer_led_timer);
+        }
+        usb_device_handle_frame();
+    }
+
+    if (pending & USB_OTG_GINTSTS_IEPINT) {
+        for (uint8_t ep = 0; ep < USB_MAX_ENDPOINTS; ep++) {
+            if (USB_OTG_DEVICE->DAINT & (1 << ep)) {
+                if (usb_endpoints[ep].event_handler) {
+                    usb_endpoints[ep].event_handler(ep, usb_endpoint_event_data_sent);
+                }
+                USB_EP_IN(ep)->DIEPINT = USB_EP_IN(ep)->DIEPINT;
+            }
+        }
+    }
+
+    if (pending & USB_OTG_GINTSTS_OEPINT) {
+        for (uint8_t ep = 0; ep < USB_MAX_ENDPOINTS; ep++) {
+            if (USB_OTG_DEVICE->DAINT & (1 << (16 + ep))) {
+                uint32_t doepint = USB_EP_OUT(ep)->DOEPINT;
+                USB_EP_OUT(ep)->DOEPINT = doepint;
+
+                usb_endpoint_event_t evt = (doepint & USB_OTG_DOEPINT_STUP) ?
+                    usb_endpoint_event_setup : usb_endpoint_event_data_received;
+
+                if (usb_endpoints[ep].event_handler) {
+                    usb_endpoints[ep].event_handler(ep, evt);
+                }
+            }
+        }
+    }
+
+    if (pending & USB_OTG_GINTSTS_RXFLVL) {
+        uint32_t grxstsp = USB_OTG_FS->GRXSTSP;
+        uint8_t ep = grxstsp & USB_OTG_GRXSTSP_EPNUM_Msk;
+        uint32_t bcnt = (grxstsp & USB_OTG_GRXSTSP_BCNT_Msk) >> USB_OTG_GRXSTSP_BCNT_Pos;
+        uint32_t pktsts = (grxstsp & USB_OTG_GRXSTSP_PKTSTS_Msk) >> USB_OTG_GRXSTSP_PKTSTS_Pos;
+
+        if (pktsts == 0x02 || pktsts == 0x06) { // DATA_UPDT or SETUP_UPDT
+            EndPoint[ep].rxCounter = bcnt;
+            read_Fifo(ep, bcnt);
+        }
+    }
+    #else
     istr = USB->ISTR;
     if (istr & USB_ISTR_CTR) {
         uint8_t ep_num = USB->ISTR & USB_ISTR_EP_ID;
@@ -481,5 +576,6 @@ void usb_poll() {
         }
         usb_device_handle_frame();
     }
+    #endif
     usb_device_poll();
 }
