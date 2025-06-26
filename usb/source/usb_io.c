@@ -61,7 +61,7 @@ void usb_io_reset() {
     USB->DADDR = USB_DADDR_EF;
 
 
-    #elif defined(STM32F769xx)
+    #elif defined(STM32F7)
     USB_OTG_FS->GINTSTS &= ~0xFFFFFFFF;
 
     
@@ -74,8 +74,8 @@ void usb_io_reset() {
     for (uint8_t ep_num=0; ep_num<USB_NUM_ENDPOINTS; ep_num++) {
         ep_reg_t ep_type = 0;
 
-        USB_EP_OUT(ep_num)->DOEPCTL = USB_OTG_DOEPCTL_USBAEP | USB_OTG_DOEPCTL_EPTYP_1 | (64 & USB_OTG_DOEPCTL_MPSIZ);
-        USB_EP_IN(ep_num)->DIEPCTL = USB_OTG_DIEPCTL_USBAEP | USB_OTG_DIEPCTL_EPTYP_1 | (64 & USB_OTG_DIEPCTL_MPSIZ);
+        USB_EP_OUT(ep_num)->DOEPCTL = USB_OTG_DOEPCTL_USBAEP  | (64 & USB_OTG_DOEPCTL_MPSIZ);
+        USB_EP_IN(ep_num)->DIEPCTL = USB_OTG_DIEPCTL_USBAEP | (64 & USB_OTG_DIEPCTL_MPSIZ);
 
         switch(usb_endpoints[ep_num].type) {
         case usb_endpoint_type_control:
@@ -92,29 +92,18 @@ void usb_io_reset() {
             break;
         }
         
-        *ep_reg = USB_EP_RX_VALID | USB_EP_TX_NAK | ep_type | ep_num;
+        USB_EP_IN(ep_num)->DIEPCTL |= ep_type | USB_OTG_DIEPCTL_USBAEP;
+        USB_EP_OUT(ep_num)->DOEPCTL |= ep_type | USB_OTG_DOEPCTL_SNAK;
+        
+        //*ep_reg = USB_EP_RX_VALID | USB_EP_TX_NAK | ep_type | ep_num;
     }
     
-    
-
-    // 3. Настроить endpoint 0 (Control, 64 байта)
-    USB_OTG_OUT_EP(0)->DOEPCTL = USB_OTG_DOEPCTL_USBAEP | (64 & USB_OTG_DOEPCTL_MPSIZ);
-    USB_OTG_IN_EP(0)->DIEPCTL = USB_OTG_DIEPCTL_USBAEP | (64 & USB_OTG_DIEPCTL_MPSIZ);
-
-    // 4. Настроить Bulk endpoint 1 (64 байта)
-    USB_EP_OUT(ep_num)->DOEPCTL = USB_OTG_DOEPCTL_USBAEP | USB_OTG_DOEPCTL_EPTYP_1 | (64 & USB_OTG_DOEPCTL_MPSIZ);
-    USB_EP_IN(ep_num)->DIEPCTL = USB_OTG_DIEPCTL_USBAEP | USB_OTG_DIEPCTL_EPTYP_1 | (64 & USB_OTG_DIEPCTL_MPSIZ);
-
-    // 5. Настроить Interrupt endpoint 2 (16 байт, пример)
-    USB_OTG_OUT_EP(2)->DOEPCTL = USB_OTG_DOEPCTL_USBAEP | USB_OTG_DOEPCTL_EPTYP_0 | (16 & USB_OTG_DOEPCTL_MPSIZ);
-    USB_OTG_IN_EP(2)->DIEPCTL = USB_OTG_DIEPCTL_USBAEP | USB_OTG_DIEPCTL_EPTYP_0 | (16 & USB_OTG_DIEPCTL_MPSIZ);
-
     // 6. Включить нужные прерывания (RESET, ENUMDNE, RX, TX, SOF)
     USB_OTG_FS->GINTMSK = USB_OTG_GINTMSK_USBRST | USB_OTG_GINTMSK_ENUMDNEM |
                        USB_OTG_GINTMSK_RXFLVLM | USB_OTG_GINTMSK_IEPINT |
                        USB_OTG_GINTMSK_OEPINT | USB_OTG_GINTMSK_SOFM;
     // 7. Включить глобальное прерывание
-    USB_OTG->GAHBCFG |= USB_OTG_GAHBCFG_GINT;
+    USB_OTG_FS->GAHBCFG |= USB_OTG_GAHBCFG_GINT;
 
     // Сбросить адрес устройства (адрес = 0)
     USB_OTG_DEVICE->DCFG &= ~USB_OTG_DCFG_DAD;
@@ -164,7 +153,7 @@ void usb_io_init() {
     }
 
     RCC->AHBENR |= RCC_AHBENR_OTGFSEN;
-    #elif defined(STM32F769xx)
+    #elif defined(STM32F7)
     RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
 
     GPIOA->MODER &= ~GPIO_MODER_MODER12;
@@ -225,8 +214,11 @@ void usb_io_init() {
 
 /* Get Number of RX/TX Bytes Available  */
 size_t usb_bytes_available(uint8_t ep_num) {
+    #if defined(OTG)
+    return (USB_EP_IN(ep_num)->DIEPTSIZ & USB_OTG_DOEPTSIZ_XFRSIZ) >> USB_OTG_DOEPTSIZ_XFRSIZ_Pos;
+    #else
     return usb_btable[ep_num].rx_count & USB_COUNT0_RX_COUNT0_RX;
-    
+    #endif
 }
 
 size_t usb_space_available(uint8_t ep_num) {
