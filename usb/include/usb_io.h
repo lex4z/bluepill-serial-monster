@@ -26,14 +26,16 @@
 #define USB_OTG_DEVICE      		((USB_OTG_DeviceTypeDef *) (USB_OTG_FS_PERIPH_BASE + USB_OTG_DEVICE_BASE))
 #define USB_EP_OUT(i)           ((USB_OTG_OUTEndpointTypeDef *) ((USB_OTG_FS_PERIPH_BASE +  USB_OTG_OUT_ENDPOINT_BASE) + ((i) * USB_OTG_EP_REG_SIZE)))
 #define USB_EP_IN(i)            ((USB_OTG_INEndpointTypeDef *)  ((USB_OTG_FS_PERIPH_BASE + USB_OTG_IN_ENDPOINT_BASE) + ((i) * USB_OTG_EP_REG_SIZE)))
-
+#define USB_OTG_DFIFO(i)    *(__IO uint32_t *)((uint32_t)USB_OTG_FS_PERIPH_BASE  + USB_OTG_FIFO_BASE + (i) * USB_OTG_FIFO_SIZE)
 //
 
 // Endopiont types
+#if defined (OTG)
 #define USB_EP_CONTROL       0x00000000                                         /* Eptype 00 means Control */
 #define USB_EP_ISOCHRONOUS   USB_OTG_DIEPCTL_EPTYP_0                            /* Eptype 01 means Isochronous */
 #define USB_EP_BULK          USB_OTG_DIEPCTL_EPTYP_1                            /* Eptype 10 means Bulk        */
 #define USB_EP_INTERRUPT     USB_OTG_DIEPCTL_EPTYP_0 | USB_OTG_DIEPCTL_EPTYP_1  /* Eptype 11 means Interrupt   */
+#endif
 //
 
 #define USB_TRANSFER_LED_TIME       20 /* usb frames, 1 ms each at full speed */

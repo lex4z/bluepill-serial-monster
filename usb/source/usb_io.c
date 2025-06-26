@@ -241,52 +241,93 @@ size_t usb_space_available(uint8_t ep_num) {
 
 /* Endpoint Read/Write Operations */
 
+/* USB OTG FS Endpoint Read/Write Operations (no HAL) */
+
 int usb_read(uint8_t ep_num, void *buf, size_t buf_size) {
+    #if defined(OTG)
+    if (ep_num >= USB_NUM_ENDPOINTS || buf == NULL) return -1;
+
+    size_t rx_len = EndPoint[ep_num].rxCounter;
+    if (rx_len == 0 || rx_len > buf_size) return -1;
+
+    memcpy(buf, EndPoint[ep_num].rxBuffer_ptr, rx_len);
+    EndPoint[ep_num].rxCounter = 0;
+    
+    USB_EP_OUT(ep_num)->DOEPCTL |= USB_OTG_DOEPCTL_CNAK | USB_OTG_DOEPCTL_EPENA;
+    return rx_len;
+    #else
+    // Legacy USB (PMA-based)
     ep_reg_t *ep_reg = ep_regs(ep_num);
     usb_pbuffer_data_t *ep_buf = (usb_pbuffer_data_t *)(USB_PMAADDR + (usb_btable[ep_num].rx_offset<<1));
     pb_word_t ep_bytes_count = usb_btable[ep_num].rx_count & USB_COUNT0_RX_COUNT0_RX;
     pb_word_t words_left = ep_bytes_count>>1;
     pb_word_t *buf_p = (pb_word_t*)buf;
-    if (ep_bytes_count > buf_size) {
-        return -1;
-    }
+    if (ep_bytes_count > buf_size) return -1;
     usb_btable[ep_num].rx_count &= ~USB_COUNT0_RX_COUNT0_RX;
-    while(words_left--) {
-         *buf_p++ = (ep_buf++)->data;
-    }
-    if (ep_bytes_count & 0x01) {
-        *((uint8_t*)buf_p) = (uint8_t)ep_buf->data;
-    }
+    while(words_left--) *buf_p++ = (ep_buf++)->data;
+    if (ep_bytes_count & 0x01) *((uint8_t*)buf_p) = (uint8_t)ep_buf->data;
     *ep_reg = ((*ep_reg ^ USB_EP_RX_VALID) & (USB_EPREG_MASK | USB_EPRX_STAT)) | (USB_EP_CTR_RX | USB_EP_CTR_TX);
     return ep_bytes_count;
+    #endif
 }
 
 size_t usb_send(uint8_t ep_num, const void *buf, size_t count) {
+    #if defined(OTG)
+    if (ep_num >= USB_NUM_ENDPOINTS || buf == NULL || count == 0) return 0;
+
+    size_t tx_space = usb_endpoints[ep_num].tx_size;
+    if (count > tx_space) count = tx_space;
+
+    USB_EP_IN(ep_num)->DIEPTSIZ = (count & USB_OTG_DIEPTSIZ_XFRSIZ_Msk) |
+                                  (1 << USB_OTG_DIEPTSIZ_PKTCNT_Pos);
+    USB_EP_IN(ep_num)->DIEPINT = USB_EP_IN(ep_num)->DIEPINT;
+    USB_EP_IN(ep_num)->DIEPCTL |= USB_OTG_DIEPCTL_CNAK | USB_OTG_DIEPCTL_EPENA;
+
+    uint8_t *src = (uint8_t *)buf;
+    __IO uint32_t *fifo = &USB_OTG_DFIFO(ep_num);
+    uint32_t words = (count + 3) / 4;
+    for (uint32_t i = 0; i < words; i++) {
+        uint32_t word = src[0];
+        if (count > 1) word |= src[1] << 8;
+        if (count > 2) word |= src[2] << 16;
+        if (count > 3) word |= src[3] << 24;
+        *fifo = word;
+        src += 4;
+        count = (count > 4) ? (count - 4) : 0;
+    }
+
+    return tx_space;
+    #else
+    // Legacy USB
     ep_reg_t *ep_reg = ep_regs(ep_num);
     usb_pbuffer_data_t *ep_buf = (usb_pbuffer_data_t *)(USB_PMAADDR + (usb_btable[ep_num].tx_offset<<1));
     pb_word_t *buf_p = (pb_word_t*)buf;
     pb_word_t words_left;
     size_t tx_space_available = usb_endpoints[ep_num].tx_size;
-    if (count > tx_space_available) {
-        count = tx_space_available;
-    }
+    if (count > tx_space_available) count = tx_space_available;
     words_left = count >> 1;
-    while (words_left--) {
-        (ep_buf++)->data = *buf_p++;
-    }
-    if (count & 0x01) {
-        (ep_buf)->data = (uint8_t)*buf_p;
-    }
+    while (words_left--) (ep_buf++)->data = *buf_p++;
+    if (count & 0x01) (ep_buf)->data = (uint8_t)*buf_p;
     usb_btable[ep_num].tx_count = count;
     *ep_reg = ((*ep_reg ^ USB_EP_TX_VALID) & (USB_EPREG_MASK | USB_EPTX_STAT)) | (USB_EP_CTR_RX | USB_EP_CTR_TX);
     return count;
+    #endif
 }
 
-
-/* Circular Buffer Read/Write Operations */
-
-/* NOTE: usb_circ_buf_read assumes enough buffer space is available */
 size_t usb_circ_buf_read(uint8_t ep_num, circ_buf_t *buf, size_t buf_size) {
+    #if defined(OTG)
+    if (ep_num >= USB_NUM_ENDPOINTS || buf == NULL) return 0;
+    size_t rx_len = EndPoint[ep_num].rxCounter;
+    if (rx_len == 0) return 0;
+    uint8_t *src = EndPoint[ep_num].rxBuffer_ptr;
+    for (size_t i = 0; i < rx_len; i++) {
+        buf->data[buf->head] = src[i];
+        buf->head = (buf->head + 1) & (buf_size - 1);
+    }
+    EndPoint[ep_num].rxCounter = 0;
+    USB_EP_OUT(ep_num)->DOEPCTL |= USB_OTG_DOEPCTL_CNAK | USB_OTG_DOEPCTL_EPENA;
+    return rx_len;
+    #else
     ep_reg_t *ep_reg = ep_regs(ep_num);
     usb_pbuffer_data_t *ep_buf = (usb_pbuffer_data_t *)(USB_PMAADDR + (usb_btable[ep_num].rx_offset<<1));
     pb_word_t ep_bytes_count = usb_btable[ep_num].rx_count & USB_COUNT0_RX_COUNT0_RX;
@@ -304,18 +345,45 @@ size_t usb_circ_buf_read(uint8_t ep_num, circ_buf_t *buf, size_t buf_size) {
     }
     *ep_reg = ((*ep_reg ^ USB_EP_RX_VALID) & (USB_EPREG_MASK | USB_EPRX_STAT)) | (USB_EP_CTR_RX | USB_EP_CTR_TX);
     return ep_bytes_count;
+    #endif
 }
 
-/* NOTE: usb_circ_buf_send assumes endpoint is ready to send */
 size_t usb_circ_buf_send(uint8_t ep_num, circ_buf_t *buf, size_t buf_size) {
+    #if defined(OTG)
+    if (ep_num >= USB_NUM_ENDPOINTS || buf == NULL) return 0;
+
+    size_t count = circ_buf_count(buf->head, buf->tail, buf_size);
+    size_t tx_space = usb_endpoints[ep_num].tx_size;
+    if (count > tx_space) count = tx_space;
+
+    USB_EP_IN(ep_num)->DIEPTSIZ = (count & USB_OTG_DIEPTSIZ_XFRSIZ_Msk) |
+                                  (1 << USB_OTG_DIEPTSIZ_PKTCNT_Pos);
+    USB_EP_IN(ep_num)->DIEPINT = USB_EP_IN(ep_num)->DIEPINT;
+    USB_EP_IN(ep_num)->DIEPCTL |= USB_OTG_DIEPCTL_CNAK | USB_OTG_DIEPCTL_EPENA;
+    
+    
+    __IO uint32_t *fifo = &USB_OTG_DFIFO(ep_num);
+    uint32_t word = 0;
+    uint8_t byte_count = 0;
+
+    for (size_t i = 0; i < count; i++) {
+        word |= ((uint32_t)buf->data[buf->tail]) << (8 * byte_count);
+        buf->tail = (buf->tail + 1) & (buf_size - 1);
+        byte_count++;
+        if (byte_count == 4 || i == count - 1) {
+            *fifo = word;
+            word = 0;
+            byte_count = 0;
+        }
+    }
+    return count;
+    #else
     ep_reg_t *ep_reg = ep_regs(ep_num);
     usb_pbuffer_data_t *ep_buf = (usb_pbuffer_data_t *)(USB_PMAADDR + (usb_btable[ep_num].tx_offset<<1));
     size_t count = circ_buf_count(buf->head, buf->tail, buf_size);
     size_t tx_space_available = usb_endpoints[ep_num].tx_size;
     size_t words_left;
-    if (count > tx_space_available) {
-        count = tx_space_available;
-    }
+    if (count > tx_space_available) count = tx_space_available;
     words_left = count >> 1;
     while (words_left--) {
         pb_word_t pb_word = buf->data[buf->tail];
@@ -331,6 +399,7 @@ size_t usb_circ_buf_send(uint8_t ep_num, circ_buf_t *buf, size_t buf_size) {
     usb_btable[ep_num].tx_count = count;
     *ep_reg = ((*ep_reg ^ USB_EP_TX_VALID) & (USB_EPREG_MASK | USB_EPTX_STAT)) | (USB_EP_CTR_RX | USB_EP_CTR_TX);
     return count;
+    #endif
 }
 
 /* Endpoint Stall */
