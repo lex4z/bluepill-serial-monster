@@ -223,9 +223,8 @@ size_t usb_bytes_available(uint8_t ep_num) {
 
 size_t usb_space_available(uint8_t ep_num) {
     #if defined(OTG)
-        // For USB OTG, check if the IN endpoint is enabled and not busy
-        if ((USB_EP_IN(ep_num)->DIEPCTL & USB_OTG_DIEPCTL_USBAEP) &&
-            !(USB_EP_IN(ep_num)->DIEPTSIZ & USB_OTG_DIEPTSIZ_XFRSIZ)) {
+        USB_OTG_INEndpointTypeDef *in_ep = USB_EP_IN(ep_num);
+        if ((in_ep->DIEPCTL & USB_OTG_DIEPCTL_EPENA) == 0) {
             return usb_endpoints[ep_num].tx_size;
         }
         return 0;
@@ -243,17 +242,19 @@ size_t usb_space_available(uint8_t ep_num) {
 
 int usb_read(uint8_t ep_num, void *buf, size_t buf_size) {
     #if defined(OTG)
-    if (ep_num >= USB_NUM_ENDPOINTS || buf == NULL) return -1;
-
-    //USB_OTG_BCNT(ep_num);
-    size_t rx_len = EndPoint[ep_num].rxCounter;
-    if (rx_len == 0 || rx_len > buf_size) return -1;
-
-    memcpy(buf, EndPoint[ep_num].rxBuffer_ptr, rx_len);
-    EndPoint[ep_num].rxCounter = 0;
-    
-    USB_EP_OUT(ep_num)->DOEPCTL |= USB_OTG_DOEPCTL_CNAK | USB_OTG_DOEPCTL_EPENA;
-    return rx_len;
+    USB_OTG_OUTEndpointTypeDef *out_ep = USB_EP_OUT(ep_num);
+    uint32_t *fifo = (uint32_t*)(USB_OTG_FS_PERIPH_BASE + 0x1000 * ep_num); // адрес FIFO для ep_num
+    uint32_t count = out_ep->DOEPTSIZ & USB_OTG_DOEPTSIZ_XFRSIZ;
+    if (count > buf_size) {
+        return -1;
+    }
+    /* Read data from FIFO */
+    for (size_t i = 0; i < (count + 3) / 4; i++) {
+        ((uint32_t*)buf)[i] = *fifo;
+    }
+    /* Re-enable endpoint */
+    out_ep->DOEPCTL |= USB_OTG_DOEPCTL_EPENA | USB_OTG_DOEPCTL_CNAK;
+    return count;
     #else
     // Legacy USB (PMA-based)
     ep_reg_t *ep_reg = ep_regs(ep_num);
