@@ -19,7 +19,7 @@
 #include "usb_panic.h"
 #include "usb_io.h"
 
-#if defined (STM32F103xB)
+#if !defined(OTG)
 static volatile usb_btable_entity_t *usb_btable = (usb_btable_entity_t*)USB_PMAADDR;
 #endif
 /* USB Initialization After Reset */
