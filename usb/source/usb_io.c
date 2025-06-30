@@ -295,8 +295,8 @@ int usb_read(uint8_t ep_num, void *buf, size_t buf_size) {
 	uint8_t *tmp_ptr = buf;
 
 	for (uint32_t i = 0; i < block_cnt; i++){
-		*(uint32_t *)(void *)buf = USB_OTG_DFIFO(ep_num); // Read 4 bytes from the FIFO
-		buf += 4;
+		*(uint32_t *)(void *)tmp_ptr = USB_OTG_DFIFO(ep_num); // Read 4 bytes from the FIFO
+		tmp_ptr += 4;
 	}
 
 	if(ep_num!=0){	
@@ -306,7 +306,7 @@ int usb_read(uint8_t ep_num, void *buf, size_t buf_size) {
 		USB_EP_OUT(ep_num)->DOEPCTL |= (USB_OTG_DOEPCTL_CNAK | USB_OTG_DOEPCTL_EPENA);
 	}
 
-    buf = tmp_ptr + rx_count;
+    //buf = tmp_ptr + rx_count;
 
     return rx_count;
     #else
@@ -341,7 +341,7 @@ size_t usb_send(uint8_t ep_num, const void *buf, size_t count) {
 
         USB_EP_OUT(ep_num)->DOEPCTL |= (USB_OTG_DOEPCTL_CNAK | USB_OTG_DOEPCTL_EPENA);
     }else{
-        uint32_t* buf_p = (uint32_t*)buf;
+        uint8_t* buf_p = buf;
         uint16_t residue = (count%4==0) ? 0 : 1;
         uint32_t block_cnt = (uint32_t)((count/4) + residue);
             
