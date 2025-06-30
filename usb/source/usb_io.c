@@ -576,9 +576,10 @@ void usb_poll() {
         }
     }
 
-    if (pending & USB_OTG_GINTSTS_OEPINT) {
+    if (pending & USB_OTG_GINTSTS_OEPINT || USB_OTG_GINTSTS_RXFLVL) {
         for (uint8_t ep = 0; ep < USB_MAX_ENDPOINTS; ep++) {
-            if (USB_OTG_DEVICE->DAINT & (1 << (16 + ep))) {
+            
+            if (USB_OTG_DEVICE->DAINT & (USB_OTG_DAINT_OEPINT << ep)) {
                 uint32_t doepint = USB_EP_OUT(ep)->DOEPINT;
                 USB_EP_OUT(ep)->DOEPINT = doepint;
 
@@ -591,7 +592,8 @@ void usb_poll() {
             }
         }
     }
-
+    
+    /*
     if (pending & USB_OTG_GINTSTS_RXFLVL) {
         uint32_t grxstsp = USB_OTG_FS->GRXSTSP;
         uint8_t ep = grxstsp & USB_OTG_GRXSTSP_EPNUM_Msk;
@@ -603,6 +605,7 @@ void usb_poll() {
             //read_Fifo(ep, bcnt);
         }
     }
+        */
     #else
     istr = USB->ISTR;
     if (istr & USB_ISTR_CTR) {
