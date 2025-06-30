@@ -576,7 +576,7 @@ void usb_poll() {
         }
     }
 
-    if (pending & USB_OTG_GINTSTS_OEPINT || USB_OTG_GINTSTS_RXFLVL) {
+    if (pending & USB_OTG_GINTSTS_OEPINT) { //|| USB_OTG_GINTSTS_RXFLVL) {
         for (uint8_t ep = 0; ep < USB_MAX_ENDPOINTS; ep++) {
             
             if (USB_OTG_DEVICE->DAINT & (USB_OTG_DAINT_OEPINT << ep)) {
