@@ -78,7 +78,7 @@ void usb_io_reset() {
     while (USB_OTG_FS->GRSTCTL & USB_OTG_GRSTCTL_TXFFLSH);
 
     for (uint8_t ep_num=1; ep_num<USB_NUM_ENDPOINTS; ep_num++) {
-        ep_reg_t ep_type = 0;
+        uint32_t ep_type = 0;
 
         switch(usb_endpoints[ep_num].type) {
         case usb_endpoint_type_control:
@@ -183,7 +183,7 @@ void usb_io_init() {
     GPIOA->MODER &= ~GPIO_MODER_MODER12; // Set PA12 to input mode
     GPIOA->MODER |= GPIO_MODER_MODER12_0;
 
-    NVIC_DisableIRQ(OTG_FS_IRQn);
+    //NVIC_DisableIRQ(OTG_FS_IRQn);
 
     RCC->AHB2ENR |= RCC_AHB2ENR_OTGFSEN;
     USB_OTG_FS->GRSTCTL |= USB_OTG_GRSTCTL_CSRST;
