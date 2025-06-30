@@ -24,9 +24,17 @@
 
 //
 #if defined (OTG)
+typedef struct{
+	__IO uint32_t PCGCCTL;
+}
+USB_OTG_PCGCCTLTypeDef;
+
+#define USB_OTG_PCGCCTL      ((USB_OTG_PCGCCTLTypeDef *)( USB_OTG_FS_PERIPH_BASE + USB_OTG_PCGCCTL_BASE))
+
 #define RX_FIFO_SIZE		36 // 35 - minimum working
 #define TX_EP0_FIFO_SIZE	16 // 16 - minimum working
 #define TX_EPn_FIFO_SIZE    2*(320-(RX_FIFO_SIZE + TX_EP0_FIFO_SIZE))/(USB_NUM_ENDPOINTS-1)
+#define USB_CDC_MAX_PACKET_SIZE			64
 
 #define USB_OTG_DEVICE      ((USB_OTG_DeviceTypeDef *) (USB_OTG_FS_PERIPH_BASE + USB_OTG_DEVICE_BASE))
 #define USB_EP_OUT(i)       ((USB_OTG_OUTEndpointTypeDef *) ((USB_OTG_FS_PERIPH_BASE +  USB_OTG_OUT_ENDPOINT_BASE) + ((i) * USB_OTG_EP_REG_SIZE)))

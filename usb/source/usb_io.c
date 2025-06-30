@@ -67,9 +67,9 @@ void usb_io_reset() {
     USB->DADDR = USB_DADDR_EF;
 
 
-    #elif defined(STM32F7)
+    #elif defined(OTG)
     USB_OTG_FS->GINTSTS &= ~0xFFFFFFFF;
-
+    USB_OTG_DEVICE->DAINTMSK = USB_OTG_DAINTMSK_IEPM;
     
     // Очистить FIFO (RX и TX)
     USB_OTG_FS->GRSTCTL |= USB_OTG_GRSTCTL_RXFFLSH;
@@ -77,11 +77,8 @@ void usb_io_reset() {
     USB_OTG_FS->GRSTCTL |= USB_OTG_GRSTCTL_TXFFLSH;
     while (USB_OTG_FS->GRSTCTL & USB_OTG_GRSTCTL_TXFFLSH);
 
-    for (uint8_t ep_num=0; ep_num<USB_NUM_ENDPOINTS; ep_num++) {
+    for (uint8_t ep_num=1; ep_num<USB_NUM_ENDPOINTS; ep_num++) {
         ep_reg_t ep_type = 0;
-
-        USB_EP_OUT(ep_num)->DOEPCTL = USB_OTG_DOEPCTL_USBAEP  | (64 & USB_OTG_DOEPCTL_MPSIZ);
-        USB_EP_IN(ep_num)->DIEPCTL = USB_OTG_DIEPCTL_USBAEP | (64 & USB_OTG_DIEPCTL_MPSIZ);
 
         switch(usb_endpoints[ep_num].type) {
         case usb_endpoint_type_control:
@@ -96,13 +93,29 @@ void usb_io_reset() {
         case usb_endpoint_type_interrupt:
             ep_type = USB_EP_INTERRUPT;
             break;
+
         }
+       
         
-        USB_EP_IN(ep_num)->DIEPCTL |= ep_type | USB_OTG_DIEPCTL_USBAEP;
-        USB_EP_OUT(ep_num)->DOEPCTL |= ep_type | USB_OTG_DOEPCTL_SNAK;
+            USB_EP_IN(ep_num)->DIEPCTL |= ep_type | USB_OTG_DIEPCTL_SNAK   |	
+                                                USB_OTG_DIEPCTL_USBAEP |
+                                                USB_OTG_DOEPCTL_EPENA  |
+                                                usb_endpoints[ep_num].tx_size;
         
+            USB_EP_OUT(ep_num)->DOEPCTL |= ep_type | USB_OTG_DOEPCTL_SNAK  |
+                                                USB_OTG_DIEPCTL_TXFNUM_0 << (ep_num+1) |
+                                                USB_OTG_DOEPCTL_EPENA  |
+                                                USB_OTG_DIEPCTL_USBAEP |
+                                                USB_OTG_DOEPCTL_CNAK   |
+                                                usb_endpoints[ep_num].rx_size;
+            
+        
+
+        USB_OTG_DEVICE->DAINTMSK |=(USB_OTG_DAINTMSK_IEPM << ep_num) | (1U << (USB_OTG_DAINTMSK_OEPM + ep_num));
         //*ep_reg = USB_EP_RX_VALID | USB_EP_TX_NAK | ep_type | ep_num;
     }
+    
+    ;
     
     // 6. Включить нужные прерывания (RESET, ENUMDNE, RX, TX, SOF)
     USB_OTG_FS->GINTMSK = USB_OTG_GINTMSK_USBRST | USB_OTG_GINTMSK_ENUMDNEM |
@@ -189,26 +202,37 @@ void usb_io_init() {
     #endif
 
     #if defined(OTG)
-    // USB OTG FS core soft reset
-    USB_OTG_FS->GRSTCTL |= USB_OTG_GRSTCTL_CSRST;
-    while (USB_OTG_FS->GRSTCTL & USB_OTG_GRSTCTL_CSRST); // Wait for reset to complete
+    USB_OTG_FS->GAHBCFG = USB_OTG_GAHBCFG_GINT; /* Enable Global Interrupt */
+	USB_OTG_FS->GAHBCFG |= USB_OTG_GAHBCFG_TXFELVL;
+	USB_OTG_FS->GAHBCFG |= USB_OTG_GAHBCFG_PTXFELVL;
 
-    // Clear all pending OTG interrupts
-    USB_OTG_FS->GINTSTS = 0xFFFFFFFF;
-
-    // Set the device address to 0
-    USB_OTG_DEVICE->DCFG &= ~USB_OTG_DCFG_DAD;
-
-    // Enable device mode
-    USB_OTG_FS->GUSBCFG |= USB_OTG_GUSBCFG_FDMOD;
-    while ((USB_OTG_FS->GUSBCFG & USB_OTG_GUSBCFG_FDMOD) == 0);
-
-    // Enable USB OTG FS interrupts as needed (example: USB_OTG_GINTMSK_USBRST)
-    USB_OTG_FS->GINTMSK = USB_OTG_GINTMSK_USBRST | USB_OTG_GINTMSK_ENUMDNEM | USB_OTG_GINTMSK_RXFLVLM
-    | USB_OTG_GINTMSK_WUIM | USB_OTG_GINTMSK_SOFM | USB_OTG_GINTMSK_IEPINT | USB_OTG_GINTMSK_OEPINT;
+	USB_OTG_FS->GINTMSK = USB_OTG_GINTMSK_USBRST |
+										//		USB_OTG_GINTMSK_ENUMDNEM |
+												USB_OTG_GINTMSK_SOFM   |
+												USB_OTG_GINTMSK_OEPINT |
+												USB_OTG_GINTMSK_IEPINT |
+												USB_OTG_GINTSTS_RXFLVL;
+	/* Enable Global Interrupt for Reset, IN, OUT, RX not empty */
     
-    // Enable USB OTG FS
-    USB_OTG_FS->GAHBCFG |= USB_OTG_GAHBCFG_GINT;
+    USB_OTG_FS->GCCFG = USB_OTG_GCCFG_PWRDWN; /* Power up */
+	USB_OTG_DEVICE->DCTL = USB_OTG_DCTL_SDIS;  /* Soft disconnect */
+	USB_OTG_PCGCCTL->PCGCCTL = 0;
+    USB_OTG_FS->GUSBCFG = USB_OTG_GUSBCFG_FDMOD | USB_OTG_GUSBCFG_PHYSEL; /* Force device mode */
+
+    USB_OTG_FS->GUSBCFG = USB_OTG_GUSBCFG_FDMOD | USB_OTG_GUSBCFG_PHYSEL; /* Force device mode */
+	USB_OTG_FS->GUSBCFG &= ~(uint32_t)(0x0FUL << 10UL) ;  /* USB turnaround time (according to AHB and ReferenceManual) */
+	USB_OTG_FS->GUSBCFG |= (0x9 << 10);
+
+    USB_EP_OUT(0)->DOEPTSIZ = 0;
+	USB_EP_OUT(0)->DOEPTSIZ |= (USB_OTG_DOEPTSIZ_PKTCNT & (1 << 19)); /* This field is decremented to zero after a packet is written into the RxFIFO */
+	USB_EP_OUT(0)->DOEPTSIZ |= USB_CDC_MAX_PACKET_SIZE; /* Set in descriptor  */
+	USB_EP_OUT(0)->DOEPTSIZ |= USB_OTG_DOEPTSIZ_STUPCNT;  /* STUPCNT==0x11 means, EP can recieve 3 packets. RM says to set STUPCNT = 3*/
+	USB_EP_OUT(0)->DOEPCTL |= (USB_OTG_DOEPCTL_CNAK | USB_OTG_DOEPCTL_EPENA); /* Clear NAK and enable EP0 */
+    USB_EP_OUT(0)->DOEPTSIZ |= USB_OTG_DOEPTSIZ_STUPCNT;
+
+    USB_OTG_DEVICE->DCFG |= USB_OTG_DCFG_DSPD_Msk;  /* Device speed - FS */
+	USB_OTG_FS->GINTSTS = 0xFFFFFFFF; /* Reset Global Interrupt status */
+	USB_OTG_DEVICE->DCTL &= ~USB_OTG_DCTL_SDIS;   /* Soft connect */
     set_FIFOs_sz();
     #else
     USB->CNTR = USB_CNTR_FRES;
@@ -244,7 +268,7 @@ size_t usb_space_available(uint8_t ep_num) {
         return tx_space_available;
     #endif
 }
-
+//fifo
 void set_FIFOs_sz(){
 	USB_OTG_FS->GRXFSIZ = RX_FIFO_SIZE;											/* all EPs RX FIFO RAM size */
 	USB_OTG_FS->DIEPTXF0_HNPTXFSIZ = ((TX_EP0_FIFO_SIZE) << 16) | RX_FIFO_SIZE;						/* EP0 TX FIFO RAM size */

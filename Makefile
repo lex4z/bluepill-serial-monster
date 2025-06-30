@@ -13,7 +13,16 @@ LOWER_STM_SERIES = $(shell echo $(STM_SERIES) | tr A-Z a-z)
 LOWER_STM_NAME = $(shell echo $(STM_NAME) | tr A-Z a-z)
 
 STM_CUBE_SERIES = $(shell echo $(STM_SERIES) | cut -c 6-7)
-STM_CPU = cortex-m7
+
+ifeq ($(STM_SERIES), STM32F1)
+	OTG_DEFINE = ""
+	STM_CPU = cortex-m3
+else ifeq ($(STM_SERIES), STM32F7)
+	STM_CPU = cortex-m7
+	OTG_DEFINE = -DOTG
+else
+	STM_CPU = cortex-m3
+endif
 
 # Toolchain & Utils
 CROSS_COMPILE	?= arm-none-eabi-
@@ -34,7 +43,7 @@ STM32_INCLUDES	+= -I$(STM32CUBE)/Drivers/CMSIS/Core/Include
 STM32_INCLUDES	+= -I$(STM32CUBE)/Drivers/CMSIS/Core_A/Include
 STM32_INCLUDES	+= -I$(STM32CUBE)/Drivers/CMSIS/Device/ST/$(STM_SERIES)xx/Include
 
-DEFINES		 = -DOTG  -D$(STM_SERIES) -D$(STM_NAME) -DHSE_VALUE=8000000U
+DEFINES		 = $(OTG_DEFINE)  -D$(STM_SERIES) -D$(STM_NAME) -DHSE_VALUE=8000000U
 CPUFLAGS	 = -mthumb -mcpu=$(STM_CPU)
 WARNINGS	 = -Wall
 OPTIMIZATION = -O3

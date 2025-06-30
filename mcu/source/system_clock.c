@@ -21,16 +21,19 @@ void system_clock_init() {
         ;
     #if defined(STM32F1)
         FLASH->ACR |= FLASH_ACR_PRFTBE;
-        FLASH->ACR |= FLASH_ACR_LATENCY_1WS;
+        FLASH->ACR |= FLASH_ACR_LATENCY_1;
 
         RCC->CFGR &= ~(RCC_CFGR_PLLSRC | RCC_CFGR_PLLXTPRE | RCC_CFGR_PLLMULL);
         RCC->CFGR |= (RCC_CFGR_PLLSRC | RCC_CFGR_PLLMULL9);
     #elif defined(STM32F4) || defined(STM32F7)
         FLASH->ACR |= FLASH_ACR_PRFTEN;
         FLASH->ACR |= FLASH_ACR_LATENCY_1WS;
-        // Adjust PLL configuration for STM32F4/F7 if needed
-        // Example for STM32F4:
-        RCC->PLLCFGR = (RCC->PLLCFGR & ~(RCC_PLLCFGR_PLLSRC | RCC_PLLCFGR_PLLM)) | (RCC_PLLCFGR_PLLSRC_HSE | (8 << RCC_PLLCFGR_PLLM_Pos));
+
+        RCC->PLLCFGR = (8 << RCC_PLLCFGR_PLLM_Pos)   // PLLM = 8
+             | (192 << RCC_PLLCFGR_PLLN_Pos) // PLLN = 192
+             | (0 << RCC_PLLCFGR_PLLP_Pos)   // PLLP = 2 (for SYSCLK = 96 MHz)
+             | (4 << RCC_PLLCFGR_PLLQ_Pos)   // PLLQ = 4 (for 48 MHz)
+             | RCC_PLLCFGR_PLLSRC_HSE;       // Use HSE as PLL source
     #endif
     
     RCC->CFGR |= RCC_CFGR_HPRE_DIV1;  //AHB en div 1
