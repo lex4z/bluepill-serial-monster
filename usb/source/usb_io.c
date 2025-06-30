@@ -20,8 +20,14 @@
 #include "usb_io.h"
 
 #if !defined(OTG)
+#define USB_PMAADDR ((uint32_t)0x40006000)
 static volatile usb_btable_entity_t *usb_btable = (usb_btable_entity_t*)USB_PMAADDR;
+#elif defined(OTG)
+USB_OTG_OUTEndpointTypeDef EndPoint[8];
+#define RCC_APB2ENR_OTGFSEN_Pos    (12U)
+#define RCC_APB2ENR_OTGFSEN        (1U << RCC_APB2ENR_OTGFSEN_Pos)
 #endif
+
 /* USB Initialization After Reset */
 
 void usb_io_reset() {
@@ -135,7 +141,7 @@ void usb_io_init() {
     RCC->APB1ENR |= RCC_APB1ENR_USBEN;
     
     #elif defined(STM32F105xC)
-    RCC->APB2ENR |= RCC_APB2ENR_IOPAEN;
+    RCC->APB2ENR |= RCC_APB2ENR_OTGFSEN;
 
     GPIOA->CRH &= ~GPIO_CRH_CNF12;
     GPIOA->CRH |= GPIO_CRH_MODE12_1;
@@ -203,6 +209,7 @@ void usb_io_init() {
     
     // Enable USB OTG FS
     USB_OTG_FS->GAHBCFG |= USB_OTG_GAHBCFG_GINT;
+    set_FIFOs_sz();
     #else
     USB->CNTR = USB_CNTR_FRES;
     USB->BTABLE = 0;
@@ -238,25 +245,47 @@ size_t usb_space_available(uint8_t ep_num) {
     #endif
 }
 
+void set_FIFOs_sz(){
+	USB_OTG_FS->GRXFSIZ = RX_FIFO_SIZE;											/* all EPs RX FIFO RAM size */
+	USB_OTG_FS->DIEPTXF0_HNPTXFSIZ = ((TX_EP0_FIFO_SIZE) << 16) | RX_FIFO_SIZE;						/* EP0 TX FIFO RAM size */
+	
+    for(uint8_t i = 0; i < (USB_NUM_ENDPOINTS-1)/2; i++){
+        USB_OTG_FS->DIEPTXF[i] =  ((TX_EPn_FIFO_SIZE) << 16) | (RX_FIFO_SIZE+TX_EP0_FIFO_SIZE+TX_EPn_FIFO_SIZE*i);
+    }
+    
+	for(uint32_t i = (USB_NUM_ENDPOINTS-1)/2; i < 0x10 ; i++){
+		USB_OTG_FS->DIEPTXF[i] = 0;
+	}
+}
+
 /* Endpoint Read/Write Operations */
 
 int usb_read(uint8_t ep_num, void *buf, size_t buf_size) {
     #if defined(OTG)
-    USB_OTG_OUTEndpointTypeDef *out_ep = USB_EP_OUT(ep_num);
-    uint32_t *fifo = (uint32_t*)(USB_OTG_FS_PERIPH_BASE + 0x1000 * ep_num); // адрес FIFO для ep_num
-    uint32_t count = out_ep->DOEPTSIZ & USB_OTG_DOEPTSIZ_XFRSIZ;
-    if (count > buf_size) {
-        return -1;
-    }
-    /* Read data from FIFO */
-    for (size_t i = 0; i < (count + 3) / 4; i++) {
-        ((uint32_t*)buf)[i] = *fifo;
-    }
-    /* Re-enable endpoint */
-    out_ep->DOEPCTL |= USB_OTG_DOEPCTL_EPENA | USB_OTG_DOEPCTL_CNAK;
-    return count;
+
+    uint32_t rx_count = (USB_OTG_FS->GRXSTSP & USB_OTG_GRXSTSP_BCNT) >> 4;
+    if (rx_count > buf_size) return -1;
+
+    uint16_t residue = (rx_count%4==0) ? 0 : 1 ;
+	uint32_t block_cnt = (uint32_t)((rx_count/4) + residue);
+	uint8_t *tmp_ptr = buf;
+
+	for (uint32_t i = 0; i < block_cnt; i++){
+		*(uint32_t *)(void *)buf = USB_OTG_DFIFO(ep_num); // Read 4 bytes from the FIFO
+		buf += 4;
+	}
+
+	if(ep_num!=0){	
+		USB_EP_OUT(ep_num)->DOEPTSIZ = 0;			
+		USB_EP_OUT(ep_num)->DOEPTSIZ |= (USB_OTG_DOEPTSIZ_PKTCNT & (DOEPT_TRANSFER_PCT << USB_OTG_DOEPTSIZ_PKTCNT_Pos)); 
+		USB_EP_OUT(ep_num)->DOEPTSIZ |= usb_endpoints[ep_num].rx_size; 
+		USB_EP_OUT(ep_num)->DOEPCTL |= (USB_OTG_DOEPCTL_CNAK | USB_OTG_DOEPCTL_EPENA);
+	}
+
+    buf = tmp_ptr + rx_count;
+
+    return rx_count;
     #else
-    // Legacy USB (PMA-based)
     ep_reg_t *ep_reg = ep_regs(ep_num);
     usb_pbuffer_data_t *ep_buf = (usb_pbuffer_data_t *)(USB_PMAADDR + (usb_btable[ep_num].rx_offset<<1));
     pb_word_t ep_bytes_count = usb_btable[ep_num].rx_count & USB_COUNT0_RX_COUNT0_RX;
@@ -273,32 +302,32 @@ int usb_read(uint8_t ep_num, void *buf, size_t buf_size) {
 
 size_t usb_send(uint8_t ep_num, const void *buf, size_t count) {
     #if defined(OTG)
-    if (ep_num >= USB_NUM_ENDPOINTS || buf == NULL || count == 0) return 0;
+    if (ep_num >= USB_NUM_ENDPOINTS) return 0;
 
     size_t tx_space = usb_endpoints[ep_num].tx_size;
     if (count > tx_space) count = tx_space;
 
-    USB_EP_IN(ep_num)->DIEPTSIZ = (count & USB_OTG_DIEPTSIZ_XFRSIZ_Msk) |
-                                  (1 << USB_OTG_DIEPTSIZ_PKTCNT_Pos);
-    USB_EP_IN(ep_num)->DIEPINT = USB_EP_IN(ep_num)->DIEPINT;
-    USB_EP_IN(ep_num)->DIEPCTL |= USB_OTG_DIEPCTL_CNAK | USB_OTG_DIEPCTL_EPENA;
+    if(buf == NULL || count == 0){
+        USB_EP_IN(ep_num)->DIEPTSIZ = 0;
+        USB_EP_IN(ep_num)->DIEPTSIZ = ((USB_OTG_DIEPTSIZ_PKTCNT_Msk & ((1) << USB_OTG_DIEPTSIZ_PKTCNT_Pos))); /* One Packet */
+        USB_EP_IN(ep_num)->DIEPTSIZ &= ~USB_OTG_DIEPTSIZ_XFRSIZ_Msk;  /* Zero Length */
+        USB_EP_IN(ep_num)->DIEPCTL |= USB_OTG_DIEPCTL_CNAK | USB_OTG_DIEPCTL_EPENA;
 
-    uint8_t *src = (uint8_t *)buf;
-    __IO uint32_t *fifo = &USB_OTG_DFIFO(ep_num);
-    uint32_t words = (count + 3) / 4;
-    for (uint32_t i = 0; i < words; i++) {
-        uint32_t word = src[0];
-        if (count > 1) word |= src[1] << 8;
-        if (count > 2) word |= src[2] << 16;
-        if (count > 3) word |= src[3] << 24;
-        *fifo = word;
-        src += 4;
-        count = (count > 4) ? (count - 4) : 0;
+        while(USB_EP_IN(ep_num)->DIEPTSIZ!=0){} /* make sure zlp is gone */
+
+        USB_EP_OUT(ep_num)->DOEPCTL |= (USB_OTG_DOEPCTL_CNAK | USB_OTG_DOEPCTL_EPENA);
+    }else{
+        uint32_t* buf_p = (uint32_t*)buf;
+        uint16_t residue = (count%4==0) ? 0 : 1;
+        uint32_t block_cnt = (uint32_t)((count/4) + residue);
+            
+        for (uint32_t i = 0; (i < block_cnt) ; i++){
+            USB_OTG_DFIFO(ep_num) = *((uint32_t *)(void *)buf_p); // Write 4 bytes to the FIFO
+            buf_p+=4;	
+        }
     }
-
-    return tx_space;
+    return count;
     #else
-    // Legacy USB
     ep_reg_t *ep_reg = ep_regs(ep_num);
     usb_pbuffer_data_t *ep_buf = (usb_pbuffer_data_t *)(USB_PMAADDR + (usb_btable[ep_num].tx_offset<<1));
     pb_word_t *buf_p = (pb_word_t*)buf;
@@ -316,17 +345,31 @@ size_t usb_send(uint8_t ep_num, const void *buf, size_t count) {
 
 size_t usb_circ_buf_read(uint8_t ep_num, circ_buf_t *buf, size_t buf_size) {
     #if defined(OTG)
-    if (ep_num >= USB_NUM_ENDPOINTS || buf == NULL) return 0;
-    size_t rx_len = EndPoint[ep_num].rxCounter;
-    if (rx_len == 0) return 0;
-    uint8_t *src = EndPoint[ep_num].rxBuffer_ptr;
-    for (size_t i = 0; i < rx_len; i++) {
-        buf->data[buf->head] = src[i];
+    uint32_t rx_count = (USB_OTG_FS->GRXSTSP & USB_OTG_GRXSTSP_BCNT) >> 4;
+    if (rx_count > buf_size) return -1;
+
+    uint16_t residue = (rx_count%4==0) ? 0 : 1 ;
+	uint32_t block_cnt = (uint32_t)((rx_count/4) + residue);
+	//uint8_t  *tmp_ptr = buf;
+
+	for (uint32_t i = 0; i < block_cnt; i++){
+        buf->data[buf->head] = (uint8_t)(USB_OTG_DFIFO(ep_num));
+        buf->head = (buf->head + 1) & (buf_size - 1);
+        buf->data[buf->head] = (uint8_t)((USB_OTG_DFIFO(ep_num)) >> 8);
+        buf->head = (buf->head + 1) & (buf_size - 1);
+        buf->data[buf->head] = (uint8_t)((USB_OTG_DFIFO(ep_num)) >> 16);
+        buf->head = (buf->head + 1) & (buf_size - 1);
+        buf->data[buf->head] = (uint8_t)((USB_OTG_DFIFO(ep_num)) >> 24);
+        buf->head = (buf->head + 1) & (buf_size - 1);
+		buf += 4;
+	}
+
+    if (residue) {
+        buf->data[buf->head] = (uint8_t)(USB_OTG_DFIFO(ep_num));
         buf->head = (buf->head + 1) & (buf_size - 1);
     }
-    EndPoint[ep_num].rxCounter = 0;
-    USB_EP_OUT(ep_num)->DOEPCTL |= USB_OTG_DOEPCTL_CNAK | USB_OTG_DOEPCTL_EPENA;
-    return rx_len;
+
+    return rx_count;
     #else
     ep_reg_t *ep_reg = ep_regs(ep_num);
     usb_pbuffer_data_t *ep_buf = (usb_pbuffer_data_t *)(USB_PMAADDR + (usb_btable[ep_num].rx_offset<<1));
@@ -532,8 +575,8 @@ void usb_poll() {
         uint32_t pktsts = (grxstsp & USB_OTG_GRXSTSP_PKTSTS_Msk) >> USB_OTG_GRXSTSP_PKTSTS_Pos;
 
         if (pktsts == 0x02 || pktsts == 0x06) { // DATA_UPDT or SETUP_UPDT
-            EndPoint[ep].rxCounter = bcnt;
-            read_Fifo(ep, bcnt);
+            EndPoint[ep].DOEPTSIZ = bcnt;
+            //read_Fifo(ep, bcnt);
         }
     }
     #else

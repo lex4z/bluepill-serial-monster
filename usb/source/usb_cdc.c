@@ -61,7 +61,7 @@ static usb_cdc_state_t usb_cdc_states[USB_CDC_NUM_PORTS];
 /* Helper Functions */
 
 static USART_TypeDef* const usb_cdc_port_usarts[] = {
-    USART1, USART2, USART3
+    USART1 /*USART2, USART3*/
 };
 
 static USART_TypeDef* usb_cdc_get_port_usart(int port) {
@@ -371,9 +371,9 @@ static void usb_cdc_port_send_rx_usb(int port) {
 
 static void usb_cdc_port_start_rx(int port) {
     #if defined(STM32F7)
-   
+     DMA_Stream_TypeDef *dma_rx_channel = usb_cdc_get_port_dma_stream(port, usb_cdc_port_direction_rx);
     #else
-    DMA_Channel_TypeDef *dma_rx_ch = usb_cdc_get_port_dma_channel(port, usb_cdc_port_direction_rx);
+    DMA_Channel_TypeDef *dma_rx_channel = usb_cdc_get_port_dma_channel(port, usb_cdc_port_direction_rx);
     usb_cdc_state_t *cdc_state = &usb_cdc_states[port];
     circ_buf_t *rx_buf = &cdc_state->rx_buf;
     dma_rx_ch->CCR &= ~(DMA_CCR_EN);
@@ -381,20 +381,32 @@ static void usb_cdc_port_start_rx(int port) {
     dma_rx_ch->CNDTR = USB_CDC_BUF_SIZE;
     dma_rx_ch->CCR |= DMA_CCR_EN;
     #endif
-    DMA_Stream_TypeDef *dma_rx_stream = usb_cdc_get_port_dma_stream(port, usb_cdc_port_direction_rx);
     usb_cdc_state_t *cdc_state = &usb_cdc_states[port];
     circ_buf_t *rx_buf = &cdc_state->rx_buf;
 
     // Отключаем поток DMA
-    dma_rx_stream->CR &= ~DMA_SxCR_EN;
-    while (dma_rx_stream->CR & DMA_SxCR_EN); // Ждём полного отключения
+    #if defined(STM32F1)
+    dma_rx_channel->CCR &= ~DMA_CCR_EN;
+    while (dma_rx_channel->CCR & DMA_CCR_EN); // Ждём полного отключения
 
     // Настраиваем адрес памяти и размер передачи
-    dma_rx_stream->M0AR = (uint32_t)rx_buf->data;
-    dma_rx_stream->NDTR = USB_CDC_BUF_SIZE;
+    dma_rx_channel->CMAR = (uint32_t)rx_buf->data;
+    dma_rx_channel->CNDTR = USB_CDC_BUF_SIZE;
 
     // Включаем поток DMA
-    dma_rx_stream->CR |= DMA_SxCR_EN;
+    dma_rx_channel->CCR |= DMA_CCR_EN;
+    #else
+
+    dma_rx_channel->CR &= ~DMA_SxCR_EN;
+    while (dma_rx_channel->CR & DMA_SxCR_EN); // Ждём полного отключения
+
+    // Настраиваем адрес памяти и размер передачи
+    dma_rx_channel->M0AR = (uint32_t)rx_buf->data;
+    dma_rx_channel->NDTR = USB_CDC_BUF_SIZE;
+
+    // Включаем поток DMA
+    dma_rx_channel->CR |= DMA_SxCR_EN;
+    #endif
 }
 
 static void usb_cdc_sync_rx_buffer(int port) {
@@ -649,7 +661,7 @@ void USART1_IRQHandler() {
     (void)USART1_IRQHandler;
     usb_cdc_usart_irq_handler(0, usb_cdc_port_usarts[0], usb_cdc_states[0].txa_bitband_clear);
 }
-
+/*
 void USART2_IRQHandler() {
     (void)USART2_IRQHandler;
     usb_cdc_usart_irq_handler(1, usb_cdc_port_usarts[1], usb_cdc_states[1].txa_bitband_clear);
@@ -658,7 +670,7 @@ void USART2_IRQHandler() {
 void USART3_IRQHandler() {
     (void)USART3_IRQHandler;
     usb_cdc_usart_irq_handler(2, usb_cdc_port_usarts[2], usb_cdc_states[2].txa_bitband_clear);
-}
+}*/
 
 /* Port Configuration & Control Lines Functions */
 
@@ -747,8 +759,13 @@ void usb_cdc_reset() {
         (void)usb_cdc_states[port]._tx_data;
         usb_cdc_configure_port(port);
         USART_TypeDef *usart = usb_cdc_get_port_usart(port);
+        #if defined(STM32F4) || defined(STM32F7)
         DMA_Stream_TypeDef *dma_rx_ch = usb_cdc_get_port_dma_stream(port, usb_cdc_port_direction_rx);
         DMA_Stream_TypeDef *dma_tx_ch = usb_cdc_get_port_dma_stream(port, usb_cdc_port_direction_tx);
+        #else
+        DMA_Channel_TypeDef *dma_rx_ch = usb_cdc_get_port_dma_channel(port, usb_cdc_port_direction_rx);
+        DMA_Channel_TypeDef *dma_tx_ch = usb_cdc_get_port_dma_channel(port, usb_cdc_port_direction_tx);
+        #endif
         usart->CR1 |= USART_CR1_UE | USART_CR1_TE;
         usart->CR3 |= USART_CR3_DMAR | USART_CR3_DMAT | USART_CR3_EIE;
         if (port != 0) {

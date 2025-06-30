@@ -23,10 +23,25 @@
 #include "usb_core.h"
 
 //
-#define USB_OTG_DEVICE      		((USB_OTG_DeviceTypeDef *) (USB_OTG_FS_PERIPH_BASE + USB_OTG_DEVICE_BASE))
-#define USB_EP_OUT(i)           ((USB_OTG_OUTEndpointTypeDef *) ((USB_OTG_FS_PERIPH_BASE +  USB_OTG_OUT_ENDPOINT_BASE) + ((i) * USB_OTG_EP_REG_SIZE)))
-#define USB_EP_IN(i)            ((USB_OTG_INEndpointTypeDef *)  ((USB_OTG_FS_PERIPH_BASE + USB_OTG_IN_ENDPOINT_BASE) + ((i) * USB_OTG_EP_REG_SIZE)))
+#if defined (OTG)
+#define RX_FIFO_SIZE		36 // 35 - minimum working
+#define TX_EP0_FIFO_SIZE	16 // 16 - minimum working
+#define TX_EPn_FIFO_SIZE    2*(320-(RX_FIFO_SIZE + TX_EP0_FIFO_SIZE))/(USB_NUM_ENDPOINTS-1)
+
+#define USB_OTG_DEVICE      ((USB_OTG_DeviceTypeDef *) (USB_OTG_FS_PERIPH_BASE + USB_OTG_DEVICE_BASE))
+#define USB_EP_OUT(i)       ((USB_OTG_OUTEndpointTypeDef *) ((USB_OTG_FS_PERIPH_BASE +  USB_OTG_OUT_ENDPOINT_BASE) + ((i) * USB_OTG_EP_REG_SIZE)))
+#define USB_EP_IN(i)        ((USB_OTG_INEndpointTypeDef *)  ((USB_OTG_FS_PERIPH_BASE + USB_OTG_IN_ENDPOINT_BASE) + ((i) * USB_OTG_EP_REG_SIZE)))
 #define USB_OTG_DFIFO(i)    *(__IO uint32_t *)((uint32_t)USB_OTG_FS_PERIPH_BASE  + USB_OTG_FIFO_BASE + (i) * USB_OTG_FIFO_SIZE)
+
+#define USB_CLEAR_INTERRUPT(IRQ)    ((USB_OTG_FS->GINTSTS) &= (IRQ))
+#define USB_MASK_INTERRUPT(IRQ)     (USB_OTG_FS->GINTMSK &= ~(IRQ))
+#define USB_UNMASK_INTERRUPT(IRQ)   (USB_OTG_FS->GINTMSK |= (IRQ))
+
+#define CLEAR_IN_EP_INTERRUPT(NUM, IRQ)          (USB_EP_IN(NUM)->DIEPINT = (IRQ))
+#define CLEAR_OUT_EP_INTERRUPT(NUM, IRQ)         (USB_EP_OUT(NUM)->DOEPINT = (IRQ))
+
+#define DOEPT_TRANSFER_SIZE		0x40		/* Value used in DOEPTSIZ for EP1 */
+#define DOEPT_TRANSFER_PCT 		0x01		/* Value used in DOEPTSIZ for EP1 */
 //
 
 // Endopiont types
@@ -37,6 +52,7 @@
 #define USB_EP_INTERRUPT     USB_OTG_DIEPCTL_EPTYP_0 | USB_OTG_DIEPCTL_EPTYP_1  /* Eptype 11 means Interrupt   */
 #endif
 //
+#endif
 
 #define USB_TRANSFER_LED_TIME       20 /* usb frames, 1 ms each at full speed */
 
@@ -92,6 +108,7 @@ typedef struct {
 
 void usb_io_init();
 void usb_io_reset();
+void set_FIFOs_sz();
 
 /* Get Number of RX/TX Bytes Available  */
 

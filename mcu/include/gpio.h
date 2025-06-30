@@ -56,6 +56,7 @@ typedef enum {
      gpio_speed_low,
      gpio_speed_medium,
      gpio_speed_high,
+     gpio_speed_very_high,
      gpio_speed_unknown,
      gpio_speed_last = gpio_speed_unknown
 } __attribute__ ((packed)) gpio_speed_t;
