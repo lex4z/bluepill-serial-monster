@@ -24,8 +24,7 @@
 static volatile usb_btable_entity_t *usb_btable = (usb_btable_entity_t*)USB_PMAADDR;
 #elif defined(OTG)
 USB_OTG_OUTEndpointTypeDef EndPoint[8];
-#define RCC_APB2ENR_OTGFSEN_Pos    (12U)
-#define RCC_APB2ENR_OTGFSEN        (1U << RCC_APB2ENR_OTGFSEN_Pos)
+#
 #endif
 
 /* USB Initialization After Reset */
@@ -97,12 +96,12 @@ void usb_io_reset() {
         }
        
         
-            USB_EP_IN(ep_num)->DIEPCTL |= ep_type | USB_OTG_DIEPCTL_SNAK   |	
+        USB_EP_IN(ep_num)->DIEPCTL |= ep_type | USB_OTG_DIEPCTL_SNAK   |	
                                                 USB_OTG_DIEPCTL_USBAEP |
                                                 USB_OTG_DOEPCTL_EPENA  |
                                                 usb_endpoints[ep_num].tx_size;
         
-            USB_EP_OUT(ep_num)->DOEPCTL |= ep_type | USB_OTG_DOEPCTL_SNAK  |
+        USB_EP_OUT(ep_num)->DOEPCTL |= ep_type | USB_OTG_DOEPCTL_SNAK  |
                                                 USB_OTG_DIEPCTL_TXFNUM_0 << (ep_num+1) |
                                                 USB_OTG_DOEPCTL_EPENA  |
                                                 USB_OTG_DIEPCTL_USBAEP |
@@ -174,6 +173,7 @@ void usb_io_init() {
     RCC->AHBENR |= RCC_AHBENR_OTGFSEN;
     #elif defined(STM32F7)
     RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
+    RCC->AHB2ENR |= RCC_AHB2ENR_OTGFSEN;
 
     GPIOA->MODER &= ~GPIO_MODER_MODER12;
     GPIOA->MODER |= GPIO_MODER_MODER12_1; // Set PA12 to output mode
@@ -185,7 +185,7 @@ void usb_io_init() {
 
     //NVIC_DisableIRQ(OTG_FS_IRQn);
 
-    RCC->AHB2ENR |= RCC_AHB2ENR_OTGFSEN;
+    
     USB_OTG_FS->GRSTCTL |= USB_OTG_GRSTCTL_CSRST;
     while (USB_OTG_FS->GRSTCTL & USB_OTG_GRSTCTL_CSRST){
         __NOP();
@@ -202,6 +202,11 @@ void usb_io_init() {
     #endif
 
     #if defined(OTG)
+    USB_OTG_FS->GUSBCFG |= USB_OTG_GUSBCFG_PHYSEL;
+    
+    USB_OTG_DEVICE->DCFG = USB_OTG_DCFG_DSPD_0 | USB_OTG_DCFG_DSPD_1; // full speed
+    
+
     USB_OTG_FS->GAHBCFG = USB_OTG_GAHBCFG_GINT; /* Enable Global Interrupt */
 	USB_OTG_FS->GAHBCFG |= USB_OTG_GAHBCFG_TXFELVL;
 	USB_OTG_FS->GAHBCFG |= USB_OTG_GAHBCFG_PTXFELVL;
@@ -214,7 +219,7 @@ void usb_io_init() {
 												USB_OTG_GINTSTS_RXFLVL;
 	/* Enable Global Interrupt for Reset, IN, OUT, RX not empty */
     
-    USB_OTG_FS->GCCFG = USB_OTG_GCCFG_PWRDWN; /* Power up */
+    USB_OTG_FS->GCCFG = USB_OTG_GCCFG_PWRDWN | USB_OTG_GCCFG_VBDEN; /* Power up */
 	USB_OTG_DEVICE->DCTL = USB_OTG_DCTL_SDIS;  /* Soft disconnect */
 	USB_OTG_PCGCCTL->PCGCCTL = 0;
     USB_OTG_FS->GUSBCFG = USB_OTG_GUSBCFG_FDMOD | USB_OTG_GUSBCFG_PHYSEL; /* Force device mode */
@@ -230,7 +235,7 @@ void usb_io_init() {
 	USB_EP_OUT(0)->DOEPCTL |= (USB_OTG_DOEPCTL_CNAK | USB_OTG_DOEPCTL_EPENA); /* Clear NAK and enable EP0 */
     USB_EP_OUT(0)->DOEPTSIZ |= USB_OTG_DOEPTSIZ_STUPCNT;
 
-    USB_OTG_DEVICE->DCFG |= USB_OTG_DCFG_DSPD_Msk;  /* Device speed - FS */
+    //USB_OTG_DEVICE->DCFG |= USB_OTG_DCFG_DSPD_Msk;  /* Device speed - FS */
 	USB_OTG_FS->GINTSTS = 0xFFFFFFFF; /* Reset Global Interrupt status */
 	USB_OTG_DEVICE->DCTL &= ~USB_OTG_DCTL_SDIS;   /* Soft connect */
     set_FIFOs_sz();
@@ -255,7 +260,7 @@ size_t usb_bytes_available(uint8_t ep_num) {
 size_t usb_space_available(uint8_t ep_num) {
     #if defined(OTG)
         USB_OTG_INEndpointTypeDef *in_ep = USB_EP_IN(ep_num);
-        if ((in_ep->DIEPCTL & USB_OTG_DIEPCTL_EPENA) == 0) {
+        if ((in_ep->DIEPCTL & USB_OTG_DIEPCTL_NAKSTS) == 0) {
             return usb_endpoints[ep_num].tx_size;
         }
         return 0;
@@ -295,7 +300,7 @@ int usb_read(uint8_t ep_num, void *buf, size_t buf_size) {
 	uint8_t *tmp_ptr = buf;
 
 	for (uint32_t i = 0; i < block_cnt; i++){
-		*(uint32_t *)(void *)tmp_ptr = USB_OTG_DFIFO(ep_num); // Read 4 bytes from the FIFO
+		*(uint32_t *)(void *)tmp_ptr = USB_OTG_DFIFO(0); // Read 4 bytes from the FIFO
 		tmp_ptr += 4;
 	}
 
@@ -374,24 +379,18 @@ size_t usb_circ_buf_read(uint8_t ep_num, circ_buf_t *buf, size_t buf_size) {
 
     uint16_t residue = (rx_count%4==0) ? 0 : 1 ;
 	uint32_t block_cnt = (uint32_t)((rx_count/4) + residue);
+    uint32_t data_buf;
 	//uint8_t  *tmp_ptr = buf;
-
+    
 	for (uint32_t i = 0; i < block_cnt; i++){
-        buf->data[buf->head] = (uint8_t)(USB_OTG_DFIFO(ep_num));
-        buf->head = (buf->head + 1) & (buf_size - 1);
-        buf->data[buf->head] = (uint8_t)((USB_OTG_DFIFO(ep_num)) >> 8);
-        buf->head = (buf->head + 1) & (buf_size - 1);
-        buf->data[buf->head] = (uint8_t)((USB_OTG_DFIFO(ep_num)) >> 16);
-        buf->head = (buf->head + 1) & (buf_size - 1);
-        buf->data[buf->head] = (uint8_t)((USB_OTG_DFIFO(ep_num)) >> 24);
-        buf->head = (buf->head + 1) & (buf_size - 1);
-		buf += 4;
+        data_buf = USB_OTG_DFIFO(0);
+        for (uint8_t j = 0; j < 4; j++){
+            if((data_buf >> 8*j)){
+                buf->data[buf->head] = (uint8_t)(data_buf >> 8*j);
+                buf->head = (buf->head + 1) & (buf_size - 1);
+            }
+        }
 	}
-
-    if (residue) {
-        buf->data[buf->head] = (uint8_t)(USB_OTG_DFIFO(ep_num));
-        buf->head = (buf->head + 1) & (buf_size - 1);
-    }
 
     return rx_count;
     #else
@@ -605,7 +604,8 @@ void usb_poll() {
             //read_Fifo(ep, bcnt);
         }
     }
-        */
+    */
+
     #else
     istr = USB->ISTR;
     if (istr & USB_ISTR_CTR) {

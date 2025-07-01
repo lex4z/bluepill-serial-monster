@@ -33,7 +33,7 @@ USB_OTG_PCGCCTLTypeDef;
 
 #define RX_FIFO_SIZE		36 // 35 - minimum working
 #define TX_EP0_FIFO_SIZE	16 // 16 - minimum working
-#define TX_EPn_FIFO_SIZE    2*(320-(RX_FIFO_SIZE + TX_EP0_FIFO_SIZE))/(USB_NUM_ENDPOINTS-1)
+#define TX_EPn_FIFO_SIZE    16                              ///2*(320-(RX_FIFO_SIZE + TX_EP0_FIFO_SIZE))/(USB_NUM_ENDPOINTS-1)
 #define USB_CDC_MAX_PACKET_SIZE			64
 
 #define USB_OTG_DEVICE      ((USB_OTG_DeviceTypeDef *) (USB_OTG_FS_PERIPH_BASE + USB_OTG_DEVICE_BASE))

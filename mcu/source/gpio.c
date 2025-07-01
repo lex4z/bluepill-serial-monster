@@ -79,6 +79,20 @@ volatile uint32_t *gpio_pin_get_bitband_clear_addr(const gpio_pin_t *pin) {
 #elif defined(STM32F4)||defined(STM32F7)
 #include "stm32f7xx.h" //
 
+void gpio_config_mode(GPIO_TypeDef* gpio, unsigned pin, unsigned mode)
+{
+    gpio->MODER = (gpio->MODER & ~(3u << (2 * pin))) | (mode << (2 * pin));
+}
+
+void gpio_config_af(GPIO_TypeDef* gpio, unsigned pin, unsigned af)
+{
+    gpio_config_mode(gpio, pin, 2);
+    unsigned pin_group = pin >> 3;
+    unsigned pin_offset = pin & 7;
+    gpio->AFR[pin_group] = (gpio->AFR[pin_group] & ~(0xf << (pin_offset * 4)))
+            | (af << (pin_offset * 4));
+}
+
 static void _gpio_enable_port(GPIO_TypeDef *port) {
     int portnum = (((uint32_t)port - GPIOA_BASE) / (GPIOB_BASE - GPIOA_BASE));
     RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN << portnum;
@@ -106,6 +120,7 @@ void gpio_pin_init(const gpio_pin_t *pin) {
         }
     }
     pin->port->MODER |= moder_val;
+    
 
     // --- Настройка OTYPER (тип выхода) ---
     uint32_t otyper_val = pin->port->OTYPER;
