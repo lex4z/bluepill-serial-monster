@@ -22,6 +22,7 @@
 #include "usb.h"
 
 void system_clock_init() {
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
     RCC->CR |= RCC_CR_HSEON;
     while (!(RCC->CR & RCC_CR_HSERDY))
         ;

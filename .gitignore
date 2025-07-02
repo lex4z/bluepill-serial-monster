@@ -7,3 +7,8 @@ build/*
 cppcheck-report.txt
 /.vscode
 .DS_Store
+.stm32env
+openocd.cfg
+.gitignore
+STM32-for-VSCode.config.yaml
+STM32Make.make

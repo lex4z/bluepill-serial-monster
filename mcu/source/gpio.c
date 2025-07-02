@@ -48,7 +48,14 @@ void gpio_pin_init(const gpio_pin_t *pin) {
         *crx |= (modecfg << crx_offset);
     }
 }
+int gpio_pin_get(const gpio_pin_t *pin) {
+    if (pin->port) {
+        return (!!(pin->port->IDR & (GPIO_IDR_IDR0 << pin->pin))) != (pin->polarity == gpio_polarity_low);
+    }
+    return 0;
+}
 
+#elif defined(STM32F4)||defined(STM32F7)
 void gpio_pin_set(const gpio_pin_t *pin, int is_active) {
     if (pin->port) {
         pin->port->BSRR = (GPIO_BSRR_BS0 << pin->pin) 
@@ -58,40 +65,13 @@ void gpio_pin_set(const gpio_pin_t *pin, int is_active) {
 
 int gpio_pin_get(const gpio_pin_t *pin) {
     if (pin->port) {
-        return (!!(pin->port->IDR & (GPIO_IDR_IDR0 << pin->pin))) != (pin->polarity == gpio_polarity_low);
+        return (!!(pin->port->IDR & (GPIO_IDR_ID0 << pin->pin))) != (pin->polarity == gpio_polarity_low);
     }
     return 0;
 }
 
-volatile uint32_t *gpio_pin_get_bitband_clear_addr(const gpio_pin_t *pin) {
-    volatile uint32_t result = 0;
-    if (pin->port) {
-        result = PERIPH_BB_BASE;
-        result += ((uint32_t)(&pin->port->BSRR) - PERIPH_BASE) << 5;
-        result += pin->pin << 2;
-        if (pin->polarity == gpio_polarity_high) {
-            result += GPIO_BSRR_BR0_Pos << 2;
-        }
-    }
-    return (volatile uint32_t*)result;
-}
-
-#elif defined(STM32F4)||defined(STM32F7)
 #include "stm32f7xx.h" //
 
-void gpio_config_mode(GPIO_TypeDef* gpio, unsigned pin, unsigned mode)
-{
-    gpio->MODER = (gpio->MODER & ~(3u << (2 * pin))) | (mode << (2 * pin));
-}
-
-void gpio_config_af(GPIO_TypeDef* gpio, unsigned pin, unsigned af)
-{
-    gpio_config_mode(gpio, pin, 2);
-    unsigned pin_group = pin >> 3;
-    unsigned pin_offset = pin & 7;
-    gpio->AFR[pin_group] = (gpio->AFR[pin_group] & ~(0xf << (pin_offset * 4)))
-            | (af << (pin_offset * 4));
-}
 
 static void _gpio_enable_port(GPIO_TypeDef *port) {
     int portnum = (((uint32_t)port - GPIOA_BASE) / (GPIOB_BASE - GPIOA_BASE));
@@ -180,35 +160,6 @@ void gpio_pin_init(const gpio_pin_t *pin) {
         afr_val |= ((pin->func & 0xFU) << afr_pos);
         pin->port->AFR[afr_index] = afr_val;
     }
-}
-
-void gpio_pin_set(const gpio_pin_t *pin, int is_active) {
-    if (pin->port) {
-        // Определяем, нужно ли установить (BS) или сбросить (BR) бит
-        uint32_t bit_set = GPIO_BSRR_BS0 << pin->pin;
-        uint32_t bit_reset = GPIO_BSRR_BR0 << pin->pin;
-
-        // Вычисляем, активен ли пин с учётом полярности
-        if (!!is_active != (pin->polarity == gpio_polarity_low)) 
-        {
-            // Устанавливаем бит (BSRR[0..15]) — устанавливаем пин
-            pin->port->BSRR = bit_set;
-        } else {
-            // Сбрасываем бит (BSRR[16..31]) — сбрасываем пин
-            pin->port->BSRR = bit_reset;
-        }
-    }
-}
-
-int gpio_pin_get(const gpio_pin_t *pin) {
-    if (pin->port) {
-        int pin_state = !!(pin->port->IDR & (1U << pin->pin));
-        int polarity_low = (pin->polarity == gpio_polarity_low);
-
-        // Возвращаем состояние с учётом полярности
-        return pin_state != polarity_low;
-    }
-    return 0;
 }
 
 volatile uint32_t *gpio_pin_get_bitband_clear_addr(const gpio_pin_t *pin) {

@@ -69,6 +69,7 @@ void usb_io_reset() {
     #elif defined(OTG)
     USB_OTG_FS->GINTSTS &= ~0xFFFFFFFF;
     USB_OTG_DEVICE->DAINTMSK = USB_OTG_DAINTMSK_IEPM;
+    USB_OTG_DEVICE->DAINT = USB_OTG_DAINT_IEPINT;
     
     // Очистить FIFO (RX и TX)
     USB_OTG_FS->GRSTCTL |= USB_OTG_GRSTCTL_RXFFLSH;
@@ -111,6 +112,7 @@ void usb_io_reset() {
         
 
         USB_OTG_DEVICE->DAINTMSK |=(USB_OTG_DAINTMSK_IEPM << ep_num) | (1U << (USB_OTG_DAINTMSK_OEPM + ep_num));
+        USB_OTG_DEVICE->DAINT |= (USB_OTG_DAINT_IEPINT << ep_num) | (1U << (USB_OTG_DAINT_OEPINT + ep_num));
         //*ep_reg = USB_EP_RX_VALID | USB_EP_TX_NAK | ep_type | ep_num;
     }
     
@@ -224,7 +226,7 @@ void usb_io_init() {
 	USB_OTG_PCGCCTL->PCGCCTL = 0;
     USB_OTG_FS->GUSBCFG = USB_OTG_GUSBCFG_FDMOD | USB_OTG_GUSBCFG_PHYSEL; /* Force device mode */
 
-    USB_OTG_FS->GUSBCFG = USB_OTG_GUSBCFG_FDMOD | USB_OTG_GUSBCFG_PHYSEL; /* Force device mode */
+    
 	USB_OTG_FS->GUSBCFG &= ~(uint32_t)(0x0FUL << 10UL) ;  /* USB turnaround time (according to AHB and ReferenceManual) */
 	USB_OTG_FS->GUSBCFG |= (0x9 << 10);
 
@@ -555,7 +557,7 @@ void usb_poll() {
         USB_OTG_DEVICE->DCTL &= ~USB_OTG_DCTL_SDIS;
         usb_device_handle_wakeup();
     }
-
+    
     if (pending & USB_OTG_GINTSTS_SOF) {
         USB_CLEAR_INTERRUPT(USB_OTG_GINTSTS_SOF);
         if (usb_transfer_led_timer) {
