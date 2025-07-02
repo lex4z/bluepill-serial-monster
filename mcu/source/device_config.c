@@ -16,13 +16,22 @@
 #include <limits.h>
 #include "device_config.h"
 
-#define DEVICE_CONFIG_FLASH_SIZE    0x10000UL
+// У STM32F74xxx Flash памяти не 64 Kbyte (0x10000), а 1 Mbyte (0x100000) (ещё и разделены на какие-то сектора, но не суть)
+#if defined (STM32F1)
+    #define DEVICE_CONFIG_FLASH_SIZE    0x10000UL
+#elif defined (STM32F7)
+    #define DEVICE_CONFIG_FLASH_SIZE    0x100000UL
+#else
+    _Static_assert(0, "Unknown Flash memory size for unknown microcontroller")
+#endif
+
 #define DEVICE_CONFIG_NUM_PAGES     2
 #define DEVICE_CONFIG_PAGE_SIZE     0x400UL
 #define DEVICE_CONFIG_FLASH_END     (FLASH_BASE + DEVICE_CONFIG_FLASH_SIZE)
 #define DEVICE_CONFIG_BASE_ADDR     ((void*)(DEVICE_CONFIG_FLASH_END - DEVICE_CONFIG_NUM_PAGES * DEVICE_CONFIG_PAGE_SIZE))
 #define DEVICE_CONFIG_MAGIC         0xDECFDECFUL
 
+#if defined (STM32F1)
 static const device_config_t default_device_config = {
     .status_led_pin = { .port = GPIOC, .pin = 13, .dir = gpio_dir_output, .speed = gpio_speed_low, .func = gpio_func_general, .output = gpio_output_od, .polarity = gpio_polarity_low },
     .config_pin = { .port = GPIOB, .pin = 5, .dir = gpio_dir_input, .pull = gpio_pull_up, .polarity = gpio_polarity_low },
@@ -76,6 +85,40 @@ static const device_config_t default_device_config = {
         }
     }
 };
+#elif defined (STM32F7)
+static const device_config_t default_device_config = {
+    .status_led_pin = { .port = GPIOI, .pin = 3, .dir = gpio_dir_output, .speed = gpio_speed_low, .func = gpio_func_general, .output = gpio_output_od, .polarity = gpio_polarity_low },  // не LED но неиспользуемый пин на STM32F746G-Discovery
+    .config_pin = { .port = GPIOB, .pin = 4, .dir = gpio_dir_input, .pull = gpio_pull_up, .polarity = gpio_polarity_low },
+    .cdc_config = {
+        .port_config = {
+            /*  Port 0 */
+            {
+                .pins =  // Единственные, доступные на STM32F746G-Discovery, пины UART'а
+                {
+                    /*  rx */ { .port = GPIOC, .pin = 7, .dir = gpio_dir_input,  .pull = gpio_pull_up, .polarity = gpio_polarity_high },
+                    /*  tx */ { .port = GPIOC, .pin = 6, .dir = gpio_dir_output, .speed = gpio_speed_medium, .func = gpio_func_alternate, .output = gpio_output_pp, .polarity = gpio_polarity_high },
+                }
+            },
+            /*  Port 1 */
+            {
+                .pins =
+                {
+                    /*  rx */ { .port = GPIOA, .pin =  3, .dir = gpio_dir_input,  .pull = gpio_pull_up, .polarity = gpio_polarity_high },
+                    /*  tx */ { .port = GPIOA, .pin =  2, .dir = gpio_dir_output, .speed = gpio_speed_medium, .func = gpio_func_alternate, .output = gpio_output_pp, .polarity = gpio_polarity_high },
+                }
+            },
+            /*  Port 2 */
+            {
+                .pins =
+                {
+                    /*  rx */ { .port = GPIOB, .pin = 11, .dir = gpio_dir_input,  .pull = gpio_pull_up, .polarity = gpio_polarity_high },
+                    /*  tx */ { .port = GPIOB, .pin = 10, .dir = gpio_dir_output, .speed = gpio_speed_medium, .func = gpio_func_alternate, .output = gpio_output_pp, .polarity = gpio_polarity_high  },
+               }
+            },
+        }
+    }
+};
+#endif
 
 static device_config_t current_device_config;
 
