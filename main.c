@@ -24,7 +24,7 @@ int main() {
     system_clock_init();
     system_interrupts_init();
     device_config_init();
-    usb_pin_config();
+    usb_pin_init();
     status_led_init();
     usb_init();
     while (1) {
