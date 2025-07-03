@@ -27,6 +27,8 @@ typedef enum {
     gpio_func_general,
     gpio_func_alternate,
     gpio_func_unknown,
+    gpio_func_alternate7 = 0x7,
+    gpio_func_alternate10 = 0xA,
     gpio_func_last = gpio_func_unknown
 } __attribute__ ((packed)) gpio_func_t;
 

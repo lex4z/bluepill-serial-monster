@@ -24,6 +24,16 @@
 
 //
 #if defined (OTG)
+/***************************************************
+ * 		RX packet statuses
+***************************************************/
+
+#define STS_GOUT_NAK                           1
+#define STS_DATA_UPDT                          2
+#define STS_XFER_COMP                          3
+#define STS_SETUP_COMP                         4
+#define STS_SETUP_UPDT                         6
+
 typedef struct{
 	__IO uint32_t PCGCCTL;
 }

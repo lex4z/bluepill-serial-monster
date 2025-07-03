@@ -56,6 +56,8 @@ int gpio_pin_get(const gpio_pin_t *pin) {
 }
 
 #elif defined(STM32F4)||defined(STM32F7)
+#include "stm32f7xx.h"
+
 void gpio_pin_set(const gpio_pin_t *pin, int is_active) {
     if (pin->port) {
         pin->port->BSRR = (GPIO_BSRR_BS0 << pin->pin) 
@@ -70,14 +72,34 @@ int gpio_pin_get(const gpio_pin_t *pin) {
     return 0;
 }
 
-#include "stm32f7xx.h" //
-
-
 static void _gpio_enable_port(GPIO_TypeDef *port) {
     int portnum = (((uint32_t)port - GPIOA_BASE) / (GPIOB_BASE - GPIOA_BASE));
     RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN << portnum;
     
 }
+
+void gpio_config_mode(GPIO_TypeDef* gpio, unsigned pin, unsigned mode)
+{
+    gpio->MODER = (gpio->MODER & ~(3u << (2 * pin))) | (mode << (2 * pin));
+}
+
+void gpio_config_af(GPIO_TypeDef* gpio, unsigned pin, unsigned af)
+{
+    gpio_config_mode(gpio, pin, 2);
+    unsigned pin_group = pin >> 3;
+    unsigned pin_offset = pin & 7;
+    gpio->AFR[pin_group] = (gpio->AFR[pin_group] & ~(0xf << (pin_offset * 4)))
+            | (af << (pin_offset * 4));
+}
+
+void usb_pin_init(){
+    gpio_config_af(GPIOA,  8, gpio_func_alternate10); //SOF
+    gpio_config_af(GPIOA,  9, gpio_func_alternate10); // VBUS_DET
+    gpio_config_af(GPIOA, 10, gpio_func_alternate10); // ID
+    gpio_config_af(GPIOA, 11, gpio_func_alternate10); // DM
+    gpio_config_af(GPIOA, 12, gpio_func_alternate10); // DP
+}
+
 void gpio_pin_init(const gpio_pin_t *pin) {
     if (!pin || !pin->port) return;
 
@@ -93,7 +115,7 @@ void gpio_pin_init(const gpio_pin_t *pin) {
     if (pin->dir == gpio_dir_input) {
         moder_val |= (0x0U << (pin_pos * 2)); // input
     } else {
-        if (pin->func == gpio_func_alternate) {
+        if (pin->func != gpio_func_general) {
             moder_val |= (0x2U << (pin_pos * 2)); // alternate function
         } else {
             moder_val |= (0x1U << (pin_pos * 2)); // general purpose output
@@ -151,14 +173,14 @@ void gpio_pin_init(const gpio_pin_t *pin) {
     pin->port->PUPDR = pupdr_val;
 
     // --- Настройка альтернативной функции (если требуется) ---
-    if (pin->func == gpio_func_alternate) {
+    if (pin->func != gpio_func_general) {
         uint32_t afr_index = pin_pos / 8;       // 0 для пинов 0..7, 1 для 8..15
         uint32_t afr_pos = (pin_pos % 8) * 4;  // 4 бита на пин
 
         uint32_t afr_val = pin->port->AFR[afr_index];
         afr_val &= ~(0xFU << afr_pos);         // очистить 4 бита
         afr_val |= ((pin->func & 0xFU) << afr_pos);
-        pin->port->AFR[afr_index] = afr_val;
+        pin->port->AFR[afr_index] = afr_val | (pin->func << afr_pos);
     }
 }
 
@@ -180,6 +202,8 @@ volatile uint32_t *gpio_pin_get_bitband_clear_addr(const gpio_pin_t *pin) {
 
     return (volatile uint32_t*)bit_band_addr;
 }
+
+
 
 
 #endif

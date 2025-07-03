@@ -176,13 +176,14 @@ void usb_io_init() {
     #elif defined(STM32F7)
     RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
     RCC->AHB2ENR |= RCC_AHB2ENR_OTGFSEN;
-
+    
+    
     GPIOA->MODER &= ~GPIO_MODER_MODER12;
-    GPIOA->MODER |= GPIO_MODER_MODER12_1; // Set PA12 to output mode
+    GPIOA->MODER |= GPIO_MODER_MODER12_1;
     for (int i=0; i<0xFFFF; i++) {
         __NOP();
     }
-    GPIOA->MODER &= ~GPIO_MODER_MODER12; // Set PA12 to input mode
+    GPIOA->MODER &= ~GPIO_MODER_MODER12;
     GPIOA->MODER |= GPIO_MODER_MODER12_0;
 
     //NVIC_DisableIRQ(OTG_FS_IRQn);
@@ -293,8 +294,7 @@ void set_FIFOs_sz(){
 
 int usb_read(uint8_t ep_num, void *buf, size_t buf_size) {
     #if defined(OTG)
-
-    uint32_t rx_count = (USB_OTG_FS->GRXSTSP & USB_OTG_GRXSTSP_BCNT) >> 4;
+    uint32_t rx_count = ((USB_OTG_FS->GRXSTSP & USB_OTG_GRXSTSP_BCNT) >> USB_OTG_GRXSTSP_BCNT_Pos);
     if (rx_count > buf_size) return -1;
 
     uint16_t residue = (rx_count%4==0) ? 0 : 1 ;
@@ -577,36 +577,28 @@ void usb_poll() {
         }
     }
 
-    if (pending & USB_OTG_GINTSTS_OEPINT) { //|| USB_OTG_GINTSTS_RXFLVL) {
-        for (uint8_t ep = 0; ep < USB_MAX_ENDPOINTS; ep++) {
-            
-            if (USB_OTG_DEVICE->DAINT & (USB_OTG_DAINT_OEPINT << ep)) {
-                uint32_t doepint = USB_EP_OUT(ep)->DOEPINT;
-                USB_EP_OUT(ep)->DOEPINT = doepint;
+    if (pending & USB_OTG_GINTSTS_OEPINT || USB_OTG_GINTSTS_RXFLVL) {
+        uint32_t grxstsp = USB_OTG_FS->GRXSTSP;
+        uint8_t ep_num = grxstsp & USB_OTG_GRXSTSP_EPNUM_Msk;
+        uint32_t bcnt = (grxstsp & USB_OTG_GRXSTSP_BCNT_Msk) >> USB_OTG_GRXSTSP_BCNT_Pos;
+        uint32_t pktsts = (grxstsp & USB_OTG_GRXSTSP_PKTSTS_Msk) >> USB_OTG_GRXSTSP_PKTSTS_Pos;
+        USB_MASK_INTERRUPT(USB_OTG_GINTSTS_RXFLVL); 
 
-                usb_endpoint_event_t evt = (doepint & USB_OTG_DOEPINT_STUP) ?
-                    usb_endpoint_event_setup : usb_endpoint_event_data_received;
-
-                if (usb_endpoints[ep].event_handler) {
-                    usb_endpoints[ep].event_handler(ep, evt);
-                }
+        if(pktsts){
+            usb_endpoint_event_t ep_event;
+            if (pktsts == STS_SETUP_UPDT && bcnt > 0) {
+                ep_event = usb_endpoint_event_data_received;
+            }else if (pktsts == STS_SETUP_UPDT) {
+                ep_event = usb_endpoint_event_setup;
             }
+            
+            if (usb_endpoints[ep_num].event_handler) {
+                usb_endpoints[ep_num].event_handler(ep_num, ep_event);
+            }
+            USB_UNMASK_INTERRUPT(USB_OTG_GINTSTS_RXFLVL); 
         }
     }
     
-    /*
-    if (pending & USB_OTG_GINTSTS_RXFLVL) {
-        uint32_t grxstsp = USB_OTG_FS->GRXSTSP;
-        uint8_t ep = grxstsp & USB_OTG_GRXSTSP_EPNUM_Msk;
-        uint32_t bcnt = (grxstsp & USB_OTG_GRXSTSP_BCNT_Msk) >> USB_OTG_GRXSTSP_BCNT_Pos;
-        uint32_t pktsts = (grxstsp & USB_OTG_GRXSTSP_PKTSTS_Msk) >> USB_OTG_GRXSTSP_PKTSTS_Pos;
-
-        if (pktsts == 0x02 || pktsts == 0x06) { // DATA_UPDT or SETUP_UPDT
-            EndPoint[ep].DOEPTSIZ = bcnt;
-            //read_Fifo(ep, bcnt);
-        }
-    }
-    */
 
     #else
     istr = USB->ISTR;

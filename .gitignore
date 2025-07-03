@@ -12,3 +12,4 @@ openocd.cfg
 .gitignore
 STM32-for-VSCode.config.yaml
 STM32Make.make
+shih.c
